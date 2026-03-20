@@ -60,13 +60,25 @@ app.get('/', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-/**
- * Start Server
- */
+// Start Server
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+
+  // 🏆 Render Anti-Sleep Integration
+  // Use a self-ping every 14 minutes to keep the free instance alive
+  const SELF_URL = process.env.SELF_URL;
+  if (SELF_URL) {
+    const https = require('https');
+    setInterval(() => {
+      https.get(SELF_URL, (res) => {
+        console.log(`Internal Keep-Alive Ping: ${res.statusCode}`);
+      }).on('error', (e) => {
+        console.error(`Keep-Alive Error: ${e.message}`);
+      });
+    }, 840000); // 14 Minutes
+  }
 });
 
 // Handle unhandled promise rejections
