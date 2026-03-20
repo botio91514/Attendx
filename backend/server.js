@@ -14,6 +14,9 @@ connectDB();
 
 const app = express();
 
+// Trust proxy for Render/Cloud hosting (required for express-rate-limit)
+app.set('trust proxy', 1);
+
 /**
  * Middleware
  */
