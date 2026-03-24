@@ -471,53 +471,90 @@ const getAttendanceHistory = async (req, res, next) => {
  */
 const getAllAttendance = async (req, res, next) => {
   try {
-    const { date, department, page = 1, limit = 20 } = req.query;
+    const { date, department, page = 1, limit = 50 } = req.query;
+    const targetDate = date || getTodayDate();
 
-    // Build query
-    const query = {};
-
-    if (date) {
-      query.date = date;
+    // 🏆 Step 1: Get active employees (filtered by department if needed)
+    const userQuery = { role: 'employee', isActive: true };
+    if (department && department !== 'All') {
+      userQuery.department = department;
     }
+
+    const employees = await User.find(userQuery).select('name email employeeId department designation role avatar');
+    const employeeIds = employees.map(e => e._id);
+
+    // 🏆 Step 2: Get attendance for the target date
+    const attendanceRecords = await Attendance.find({
+      date: targetDate,
+      userId: { $in: employeeIds }
+    }).populate('userId', 'name email employeeId department designation');
+
+    // 🏆 Step 3: Get approved leaves for the target date
+    const leaves = await Leave.find({
+      status: 'approved',
+      userId: { $in: employeeIds },
+      startDate: { $lte: targetDate },
+      endDate: { $gte: targetDate }
+    });
+
+    // 🏆 Step 4: Merge everything
+    const combined = employees.map(emp => {
+      // Find attendance
+      const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
+      
+      if (record) {
+        return {
+          ...record.toObject(),
+          userId: emp // Ensure full user object is present
+        };
+      }
+
+      // Check if on leave
+      const leave = leaves.find(l => l.userId.toString() === emp._id.toString());
+      if (leave) {
+        return {
+          userId: emp,
+          date: targetDate,
+          status: 'leave',
+          leaveType: leave.leaveType,
+          isVirtual: true,
+          breaks: []
+        };
+      }
+
+      // Otherwise Absent (if not today or if it's today and past start time, etc.)
+      // For now, mark as absent if no record and no leave
+      return {
+        userId: emp,
+        date: targetDate,
+        status: 'absent',
+        isVirtual: true,
+        breaks: []
+      };
+    });
+
+    // Sort: Late first, then Present, then Leave, then Absent
+    const statusOrder = { late: 0, present: 1, leave: 2, absent: 3 };
+    combined.sort((a, b) => (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99));
 
     // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    let attendanceQuery = Attendance.find(query)
-      .sort({ date: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('userId', 'name email employeeId department designation');
-
-    // Filter by department if provided
-    if (department) {
-      const usersInDept = await User.find({ department }).select('_id');
-      const userIds = usersInDept.map((u) => u._id);
-      query.userId = { $in: userIds };
-      attendanceQuery = Attendance.find(query)
-        .sort({ date: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .populate('userId', 'name email employeeId department designation');
-    }
-
-    const [attendance, total] = await Promise.all([
-      attendanceQuery,
-      Attendance.countDocuments(query),
-    ]);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    const paginated = combined.slice(skip, skip + limitNum);
 
     res.status(200).json({
       success: true,
       data: {
-        attendance,
+        attendance: paginated,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
+          page: pageNum,
+          limit: limitNum,
+          total: combined.length,
+          pages: Math.ceil(combined.length / limitNum),
         },
       },
-      message: 'All attendance records retrieved',
+      message: 'Comprehensive attendance records retrieved',
     });
   } catch (error) {
     next(error);

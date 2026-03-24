@@ -12,17 +12,15 @@ const LiveAttendance: React.FC = () => {
   const [search, setSearch] = useState('');
   const [dept, setDept] = useState('All');
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [records, setRecords] = useState<any[]>([]);
 
   const fetchLiveAttendance = async () => {
     try {
       setLoading(true);
-      const today = new Date().toISOString().split('T')[0];
-      const res = await api.get(`/attendance/admin/all?date=${today}&limit=100`);
+      const res = await api.get(`/attendance/admin/all?date=${selectedDate}&limit=100`);
       if (res.success && Array.isArray(res.data.attendance)) {
-        // Filter: only show employees, hide admins
-        const staffOnly = res.data.attendance.filter((r: any) => r.userId && r.userId.role !== 'admin');
-        setRecords(staffOnly);
+        setRecords(res.data.attendance);
       }
     } catch (error) {
       toast.error('Failed to load live attendance');
@@ -33,7 +31,7 @@ const LiveAttendance: React.FC = () => {
 
   useEffect(() => {
     fetchLiveAttendance();
-  }, []);
+  }, [selectedDate]);
 
   const filtered = records.filter(r =>
     (dept === 'All' || r.userId?.department === dept) &&
@@ -48,7 +46,8 @@ const LiveAttendance: React.FC = () => {
       present: 'bg-success/10 text-success border-success/20',
       late: 'bg-warning/10 text-warning border-warning/20',
       absent: 'bg-destructive/10 text-destructive border-destructive/20',
-      'half-day': 'bg-primary/10 text-primary border-primary/20'
+      'half-day': 'bg-primary/10 text-primary border-primary/20',
+      leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
     };
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
@@ -58,9 +57,17 @@ const LiveAttendance: React.FC = () => {
       <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-display font-bold text-foreground">Live Attendance</h2>
-          <p className="text-sm text-muted-foreground">Last updated: <span className="font-mono">{timeString}</span></p>
+          <span className="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-1 rounded">
+            {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </span>
         </div>
         <div className="flex items-center gap-3">
+          <input 
+            type="date" 
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="input-floating text-xs w-auto py-1.5 px-3 uppercase font-bold text-muted-foreground"
+          />
           <button onClick={fetchLiveAttendance} className="nav-item p-2" disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -105,15 +112,15 @@ const LiveAttendance: React.FC = () => {
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-5 py-20 text-center text-muted-foreground">
-                      No matching attendance records found for today.
+                      No matching employee records found for {selectedDate}.
                     </td>
                   </tr>
                 ) : (
                   filtered.map((row, i) => (
-                    <tr key={i} className="border-b border-glass-border hover:bg-secondary/30 transition-colors group">
+                    <tr key={i} className={`border-b border-glass-border hover:bg-secondary/30 transition-colors group ${row.isVirtual ? 'opacity-80' : ''}`}>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-sm font-bold uppercase">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold uppercase border shadow-sm ${row.status === 'present' ? 'bg-success/20 text-success border-success/30' : row.status === 'late' ? 'bg-warning/20 text-warning border-warning/30' : row.status === 'leave' ? 'bg-indigo-500/20 text-indigo-500 border-indigo-500/30' : 'bg-destructive/10 text-destructive border-destructive/20'}`}>
                             {row.userId?.name?.charAt(0)}
                           </div>
                           <div className="flex flex-col">
@@ -124,7 +131,8 @@ const LiveAttendance: React.FC = () => {
                       </td>
                       <td className="px-5 py-4 text-sm text-muted-foreground font-medium">{row.userId?.department}</td>
                       <td className="px-5 py-4 text-sm font-mono text-foreground">
-                        {row.checkIn ? new Date(row.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        {row.checkIn ? new Date(row.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                         row.status === 'leave' ? <span className="text-[10px] italic">ON LEAVE</span> : '--:--'}
                       </td>
                       <td className="px-5 py-4 text-sm font-mono text-foreground">
                         {row.checkOut ? new Date(row.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
@@ -133,7 +141,10 @@ const LiveAttendance: React.FC = () => {
                         {row.breaks?.length || 0} breaks
                       </td>
                       <td className="px-5 py-4">
-                        <span className={getStatusBadge(row.status)}>{row.status}</span>
+                        <div className="flex flex-col gap-1">
+                          <span className={getStatusBadge(row.status)}>{row.status}</span>
+                          {row.leaveType && <span className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">{row.leaveType}</span>}
+                        </div>
                       </td>
                     </tr>
                   ))
