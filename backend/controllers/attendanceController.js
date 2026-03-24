@@ -42,14 +42,24 @@ const checkIn = async (req, res, next) => {
       await Attendance.deleteOne({ _id: existing._id });
     }
 
-    // Compute status inline (mirrors determineStatus model method)
-    // so we never need to call .save() after the upsert
-    const startTimeStr = settings?.officeStartTime || '09:15';
-    const graceMinutes = settings?.lateGracePeriod || 0;
-    const [startHour, startMin] = startTimeStr.split(':').map(Number);
-    const threshold = new Date(now);
-    threshold.setHours(startHour, startMin + graceMinutes, 0, 0);
-    const computedStatus = now > threshold ? 'late' : 'present';
+    // 🛠️ Timezone-Aware Calculation (Fixed for IST/Local)
+    // Convert current time to local HH:MM for comparison
+    const currentTimeStr = now.toLocaleTimeString('en-US', { 
+      timeZone: 'Asia/Kolkata', 
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    // Convert both to total minutes from midnight for direct comparison
+    const [currH, currM] = currentTimeStr.split(':').map(Number);
+    const [startH, startM] = (settings?.officeStartTime || '09:15').split(':').map(Number);
+    const grace = settings?.lateGracePeriod || 0;
+    
+    const currentTotalMin = currH * 60 + currM;
+    const thresholdTotalMin = startH * 60 + startM + grace;
+    
+    const computedStatus = currentTotalMin > thresholdTotalMin ? 'late' : 'present';
 
     // Single atomic upsert — no .save() ever called.
     // This completely eliminates the E11000 duplicate key race condition.
