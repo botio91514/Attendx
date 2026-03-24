@@ -3,6 +3,8 @@ const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
+const Leave = require('../models/Leave');
+const Holiday = require('../models/Holiday');
 const {
   getTodayDate,
   formatDate,
@@ -359,38 +361,90 @@ const getTodayAttendance = async (req, res, next) => {
 const getAttendanceHistory = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const { month, year, page = 1, limit = 10 } = req.query;
+    const { month, year, page = 1, limit = 31 } = req.query;
 
-    // Build query
     const query = { userId };
+    let startD, endD;
 
     if (month && year) {
       const { startStr, endStr } = getMonthRange(parseInt(year), parseInt(month));
       query.date = { $gte: startStr, $lte: endStr };
-    } else if (year) {
-      query.date = { $regex: `^${year}` };
+      startD = new Date(startStr);
+      endD = new Date(endStr);
     }
 
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // 1. Get real attendance records
+    const attendanceRecords = await Attendance.find(query).sort({ date: 1 });
+    let finalAttendance = attendanceRecords.map(a => a.toObject());
 
-    const [attendance, total] = await Promise.all([
-      Attendance.find(query)
-        .sort({ date: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Attendance.countDocuments(query),
-    ]);
+    // 2. Inject Approved Leaves (The "Virtual" Records)
+    if (startD && endD) {
+      const leaves = await Leave.find({
+        userId: userId,
+        status: 'approved',
+        startDate: { $lte: endD },
+        endDate: { $gte: startD }
+      });
+
+      leaves.forEach(leave => {
+        let current = new Date(Math.max(leave.startDate, startD));
+        const leaveEnd = new Date(Math.min(leave.endDate, endD));
+
+        while (current <= leaveEnd) {
+          const dateStr = current.toISOString().split('T')[0];
+          const hasAttendance = finalAttendance.some(a => a.date.startsWith(dateStr));
+          
+          if (!hasAttendance) {
+            finalAttendance.push({
+              userId,
+              date: dateStr,
+              status: 'leave',
+              leaveType: leave.type,
+              isVirtual: true
+            });
+          }
+          current.setDate(current.getDate() + 1);
+        }
+      });
+    }
+
+    // 3. Inject Holidays (The "Public" Records)
+    if (startD && endD) {
+      const holidays = await Holiday.find({
+        date: { $gte: startD, $lte: endD }
+      });
+
+      holidays.forEach(holiday => {
+        const dateStr = holiday.date.toISOString().split('T')[0];
+        const hasAttendanceOrLeave = finalAttendance.some(a => a.date.startsWith(dateStr));
+        
+        if (!hasAttendanceOrLeave) {
+          finalAttendance.push({
+            userId,
+            date: dateStr,
+            status: 'holiday',
+            title: holiday.title,
+            isVirtual: true
+          });
+        }
+      });
+    }
+
+    // Sort by date descending for history view
+    finalAttendance.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedAttendance = finalAttendance.slice(skip, skip + parseInt(limit));
 
     res.status(200).json({
       success: true,
       data: {
-        attendance,
+        attendance: paginatedAttendance,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
+          total: finalAttendance.length,
+          pages: Math.ceil(finalAttendance.length / parseInt(limit)),
         },
       },
       message: 'Attendance history retrieved',
@@ -509,20 +563,19 @@ const getAttendanceReport = async (req, res, next) => {
       leaveQuery.userId = { $in: userIds };
     }
 
-    const Leave = require('../models/Leave');
     const leaves = await Leave.find(leaveQuery).populate('userId', 'name email employeeId department designation');
 
     // Combine them: For each day of leave, if no attendance exists, add a virtual record
     const combinedRecords = [...attendance];
-    
+
     // We only create leave records if they don't already have an attendance record for that specific date
     leaves.forEach(leave => {
       let curr = new Date(Math.max(new Date(leave.startDate), new Date(from || leave.startDate)));
       const last = new Date(Math.min(new Date(leave.endDate), new Date(to || leave.endDate)));
-      
+
       while (curr <= last) {
         const dateStr = curr.toISOString().split('T')[0];
-        const hasAttendance = attendance.find(a => 
+        const hasAttendance = attendance.find(a =>
           a.date === dateStr && a.userId._id.toString() === leave.userId._id.toString()
         );
 
@@ -582,7 +635,7 @@ const getTodayStats = async (req, res, next) => {
     const employeeIds = employees.map(emp => emp._id);
 
     // Get today's attendance records for these employees only
-    const todayAttendance = await Attendance.find({ 
+    const todayAttendance = await Attendance.find({
       date: today,
       userId: { $in: employeeIds }
     });
@@ -610,7 +663,7 @@ const getTodayStats = async (req, res, next) => {
 
     // Calculate not checked in
     stats.notCheckedIn = totalEmployees - stats.checkedInCount;
-    
+
     // Check if today is a working day
     const settings = await Settings.getSettings();
     const todayDay = new Date().getDay(); // 0-6

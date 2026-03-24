@@ -135,22 +135,30 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onMenuClick }) => {
                                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">
                                        {n.message}
                                     </p>
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between mt-1">
                                        <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
                                           <div className="w-4 h-4 rounded-full bg-secondary overflow-hidden">
                                              {n.sender?.avatar ? <img src={n.sender.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px]">{n.sender?.name?.charAt(0)}</div>}
                                           </div>
-                                          <span className="text-[10px] font-medium truncate max-w-[100px]">{n.sender?.name}</span>
+                                          <span className="text-[10px] font-medium truncate max-w-[80px]">{n.sender?.name}</span>
                                        </div>
-                                       {!n.isRead && (
-                                         <button 
-                                           onClick={(e) => handleMarkAsReadLocal(n._id, e)}
-                                           className="p-1 rounded-md hover:bg-primary/10 text-primary transition-colors"
-                                           title="Mark as read"
-                                         >
-                                            <Check className="w-4 h-4" />
-                                         </button>
-                                       )}
+                                       
+                                       <div className="flex items-center gap-2">
+                                          {n.link && (
+                                            <span className="text-[10px] font-bold text-primary px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 opacity-0 group-hover:opacity-100 transition-all">
+                                               View Details
+                                            </span>
+                                          )}
+                                          {!n.isRead && (
+                                            <button 
+                                              onClick={(e) => handleMarkAsReadLocal(n._id, e)}
+                                              className="p-1 rounded-md hover:bg-primary/20 text-primary transition-colors bg-primary/5"
+                                              title="Mark as read"
+                                            >
+                                               <Check className="w-4 h-4" />
+                                            </button>
+                                          )}
+                                       </div>
                                     </div>
                                  </div>
                               </div>

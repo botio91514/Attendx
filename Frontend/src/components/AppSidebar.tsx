@@ -38,10 +38,20 @@ interface AppSidebarProps {
 
 const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
   const { user, logout, theme, toggleTheme } = useAuth();
-  const { notifications } = useNotifications();
+  const { notifications, markByType } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
   const navItems = user?.role === 'admin' ? adminNav : employeeNav;
+
+  // 🚀 Auto-mark notifications as read when visiting the corresponding page
+  React.useEffect(() => {
+    const path = location.pathname;
+    if (path === '/admin/leaves') markByType('leave_request');
+    if (path === '/admin/live') markByType('check_in');
+    if (path === '/admin/announcements') markByType('announcement');
+    if (path === '/leaves') markByType(['leave_approved', 'leave_rejected']);
+    if (path === '/notices') markByType('announcement');
+  }, [location.pathname, markByType]);
 
   const getUnreadCountForItem = (path: string) => {
     if (!notifications) return 0;

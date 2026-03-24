@@ -23,6 +23,7 @@ interface NotificationContextType {
   fetchNotifications: (silent?: boolean) => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  markByType: (type: string | string[]) => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -36,14 +37,35 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!silent) setLoading(true);
       const res = await api.get('/notifications');
       if (res.success) {
-        setNotifications(res.data);
+        const newNotifications = res.data;
+        
+        // 🚀 Detect New Notifications only if silent tracking is on
+        if (silent && notifications.length > 0) {
+           const newUnread = (newNotifications as Notification[]).filter(
+             newN => !newN.isRead && !notifications.some(oldN => oldN._id === newN._id)
+           );
+           
+           if (newUnread.length > 0) {
+              const latest = newUnread[0];
+              toast(latest.title, {
+                description: latest.message,
+                action: latest.link ? {
+                  label: 'View',
+                  onClick: () => window.location.href = latest.link
+                } : undefined,
+                icon: '🔔'
+              });
+           }
+        }
+        
+        setNotifications(newNotifications);
       }
     } catch (err) {
       console.error('Failed to fetch notifications');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, []);
+  }, [notifications]);
 
   const markAsRead = async (id: string) => {
     try {
@@ -64,6 +86,25 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     } catch (err) {
       toast.error('Failed to update notifications');
+    }
+  };
+
+  const markByType = async (type: string | string[]) => {
+    try {
+      const types = Array.isArray(type) ? type : [type];
+      const targetIds = notifications
+        .filter(n => !n.isRead && types.includes(n.type))
+        .map(n => n._id);
+      
+      if (targetIds.length === 0) return;
+
+      // Mark local first for immediate feedback
+      setNotifications(prev => prev.map(n => targetIds.includes(n._id) ? { ...n, isRead: true } : n));
+      
+      // Batch update on backend
+      await Promise.all(targetIds.map(id => api.put(`/notifications/${id}/read`, {})));
+    } catch (err) {
+      console.error('Failed to mark types as read');
     }
   };
 
@@ -92,7 +133,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       loading,
       fetchNotifications,
       markAsRead,
-      markAllRead
+      markAllRead,
+      markByType
     }}>
       {children}
     </NotificationContext.Provider>
