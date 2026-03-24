@@ -49,7 +49,9 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
 
     if (path === '/admin/leaves') return unread.filter(n => n.type === 'leave_request').length;
     if (path === '/admin/live') return unread.filter(n => n.type === 'check_in').length;
+    if (path === '/admin/announcements') return unread.filter(n => n.type === 'announcement').length;
     if (path === '/leaves') return unread.filter(n => n.type === 'leave_approved' || n.type === 'leave_rejected').length;
+    if (path === '/notices') return unread.filter(n => n.type === 'announcement').length;
 
     return 0;
   };
@@ -117,7 +119,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
                   >
                     <span className="whitespace-nowrap text-sm">{item.label}</span>
                     {getUnreadCountForItem(item.path) > 0 && (
-                      <span className="bg-red-500 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2 border border-white/20">
+                      <span className="bg-red-500 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2 border border-white/20 animate-pulse-subtle shadow-lg">
                         {getUnreadCountForItem(item.path)}
                       </span>
                     )}
@@ -125,7 +127,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
                 )}
               </AnimatePresence>
               {collapsed && getUnreadCountForItem(item.path) > 0 && (
-                <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></div>
+                <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-pulse-subtle shadow-sm"></div>
               )}
             </button>
           );
