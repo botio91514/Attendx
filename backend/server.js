@@ -36,11 +36,20 @@ if (!fs.existsSync(uploadDir)) {
 /**
  * Middleware
  */
-// Enable CORS for frontend
-const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : 'http://localhost:8080';
+// Enable CORS for frontend — supports multiple origins (comma-separated in FRONTEND_URL)
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:8080')
+  .split(',')
+  .map(url => url.trim().replace(/\/$/, ''));
 
 app.use(cors({
-  origin: frontendUrl,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS blocked: ${origin} is not allowed`));
+  },
   credentials: true
 }));
 
