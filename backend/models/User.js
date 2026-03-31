@@ -58,6 +58,53 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    resetToken: {
+      type: String,
+      select: false,
+    },
+    resetTokenExpiry: {
+      type: Date,
+      select: false,
+    },
+    // Persistent Login (Added for refresh token)
+    refreshToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    refreshTokenExpiry: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    // Profile Management (Added)
+    phone: { 
+      type: String, 
+      default: null 
+    },
+    address: { 
+      type: String, 
+      default: null 
+    },
+    profilePhoto: { 
+      type: String, 
+      default: null 
+    },
+    joiningDate: {
+      type: Date,
+      default: Date.now
+    },
+    emergencyContact: {
+      name: { type: String, default: null },
+      phone: { type: String, default: null },
+      relationship: { type: String, default: null }
+    },
+    bankDetails: {
+      accountNumber: { type: String, default: null, select: false },
+      ifscCode: { type: String, default: null, select: false },
+      bankName: { type: String, default: null, select: false },
+      accountHolderName: { type: String, default: null, select: false }
+    },
   },
   {
     timestamps: true,

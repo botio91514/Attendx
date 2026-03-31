@@ -1,4 +1,7 @@
 const Settings = require('../models/Settings');
+const { sendEmail } = require('../utils/emailService');
+const { policyChangeTemplate } = require('../utils/emailTemplates');
+const User = require('../models/User');
 
 /**
  * @desc    Get current office settings
@@ -39,12 +42,28 @@ const updateSettings = async (req, res, next) => {
       settings = new Settings({});
     }
 
-    if (officeStartTime !== undefined) settings.officeStartTime = officeStartTime;
-    if (officeEndTime !== undefined) settings.officeEndTime = officeEndTime;
-    if (lateGracePeriod !== undefined) settings.lateGracePeriod = lateGracePeriod;
+    // Capture changes for email notification
+    const changes = [];
+    if (officeStartTime !== undefined && officeStartTime !== settings.officeStartTime) {
+      changes.push({ type: 'Office Start Time', old: settings.officeStartTime, new: officeStartTime });
+      settings.officeStartTime = officeStartTime;
+    }
+    if (officeEndTime !== undefined && officeEndTime !== settings.officeEndTime) {
+      changes.push({ type: 'Office End Time', old: settings.officeEndTime, new: officeEndTime });
+      settings.officeEndTime = officeEndTime;
+    }
+    if (lateGracePeriod !== undefined && lateGracePeriod !== settings.lateGracePeriod) {
+      changes.push({ type: 'Late Grace Period', old: `${settings.lateGracePeriod}m`, new: `${lateGracePeriod}m` });
+      settings.lateGracePeriod = lateGracePeriod;
+    }
+    if (workingDays !== undefined && JSON.stringify(workingDays) !== JSON.stringify(settings.workingDays)) {
+      changes.push({ type: 'Working Days Schedule', old: settings.workingDays.join(','), new: workingDays.join(',') });
+      settings.workingDays = workingDays;
+    }
+    
+    // Other fields without granular change tracking for now
     if (halfDayThreshold !== undefined) settings.halfDayThreshold = halfDayThreshold;
     if (maxBreakLimit !== undefined) settings.maxBreakLimit = maxBreakLimit;
-    if (workingDays !== undefined) settings.workingDays = workingDays;
     
     settings.updatedBy = req.user._id;
 
@@ -55,6 +74,37 @@ const updateSettings = async (req, res, next) => {
       data: settings,
       message: 'Office settings updated successfully',
     });
+
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify employees if policy-impacting changes were made
+    if (changes.length > 0) {
+      const activeEmployees = await User.find({ role: 'employee', isActive: true });
+      
+      const broadcastUpdate = async () => {
+        // Handle in batches for scalability
+        for (let i = 0; i < activeEmployees.length; i += 10) {
+          const batch = activeEmployees.slice(i, i + 10);
+          await Promise.allSettled(batch.map(emp => 
+            sendEmail({
+              to: emp.email,
+              subject: '⚖️ Important: Office Policy Updated',
+              html: policyChangeTemplate({
+                employeeName: emp.name,
+                changeType: changes.map(c => c.type).join(' & '),
+                oldValue: changes.map(c => `${c.type}: ${c.old}`).join(' | '),
+                newValue: changes.map(c => `${c.type}: ${c.new}`).join(' | '),
+                effectiveFrom: new Date().toLocaleDateString('en-IN'),
+                updatedBy: req.user.name
+              })
+            })
+          ));
+        }
+      };
+
+      broadcastUpdate().catch(err => console.error('Policy Update Broadcast failed:', err));
+    }
+    // --- END EMAIL NOTIFICATION ---
+
   } catch (error) {
     next(error);
   }

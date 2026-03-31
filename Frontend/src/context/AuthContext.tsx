@@ -11,15 +11,29 @@ export interface User {
   employeeId: string;
   department: string;
   designation: string;
-  joinedDate?: string;
+  joiningDate?: string;
   createdAt?: string;
+  phone?: string | null;
+  address?: string | null;
+  profilePhoto?: string | null;
+  emergencyContact?: {
+    name: string | null;
+    phone: string | null;
+    relationship: string | null;
+  };
+  bankDetails?: {
+    accountNumber: string | null;
+    ifscCode: string | null;
+    bankName: string | null;
+    accountHolderName: string | null;
+  };
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   token: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   logout: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
@@ -48,14 +62,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, rememberMe: boolean = false) => {
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, rememberMe }),
       });
 
       const data = await response.json();
@@ -78,12 +92,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await fetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
     setUser(null);
     setToken(null);
     localStorage.removeItem('attendx_user');
     localStorage.removeItem('attendx_token');
-  }, []);
+  }, [token]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => {

@@ -13,6 +13,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +21,7 @@ const LoginPage: React.FC = () => {
     setLoading(true);
     
     try {
-      const success = await login(email, password);
+      const success = await login(email, password, rememberMe);
       if (success) {
         // Retrieve fresh user info from local storage to decide where to go
         const stored = localStorage.getItem('attendx_user');
@@ -108,6 +109,20 @@ const LoginPage: React.FC = () => {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+              </div>
+
+              {/* Remember Me Checkbox (ADDED) */}
+              <div className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  id="rememberMe"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 accent-indigo-500 rounded border-slate-700 bg-slate-800/50 cursor-pointer"
+                />
+                <label htmlFor="rememberMe" className="cursor-pointer select-none font-body">
+                  Remember me for 30 days
+                </label>
               </div>
 
               {error && (

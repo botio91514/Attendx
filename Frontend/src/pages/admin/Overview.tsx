@@ -74,8 +74,9 @@ const AdminOverview: React.FC = () => {
       }
 
       if (attendanceRes.success && attendanceRes.data && attendanceRes.data.stats) {
-        const { present = 0, absent = 0, late = 0 } = attendanceRes.data.stats;
-        const presentToday = present + late;
+        const { present = 0, absent = 0, late = 0, halfDay = 0 } = attendanceRes.data.stats;
+        const presentToday = present + late + halfDay;
+        const lateToday = late;
 
         let totalPayout = 0;
         if (payrollRes.success && payrollRes.data) {

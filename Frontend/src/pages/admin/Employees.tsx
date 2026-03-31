@@ -230,7 +230,14 @@ const Employees: React.FC = () => {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleOpenEdit(emp)} className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors" title="Edit Profile">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); window.location.href = `/admin/employee/${emp._id}`; }} 
+                            className="p-2 rounded-lg hover:bg-indigo-500/10 text-indigo-500 transition-colors" 
+                            title="View Full Profile"
+                          >
+                            <User className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleOpenEdit(emp)} className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors" title="Quick Edit">
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button onClick={() => handlePermanentDelete(emp)} className="p-2 rounded-lg hover:bg-destructive/20 text-destructive transition-colors" title="DELETE PERMANENTLY">

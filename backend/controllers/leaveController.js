@@ -10,6 +10,12 @@ const {
   getCurrentYear,
   dateRangesOverlap,
 } = require('../utils/leaveHelpers');
+const { sendEmail } = require('../utils/emailService');
+const { 
+  leaveRequestAdminTemplate, 
+  leaveApprovedTemplate, 
+  leaveRejectedTemplate 
+} = require('../utils/emailTemplates');
 
 /**
  * @desc    Apply for leave
@@ -109,7 +115,41 @@ const applyLeave = async (req, res, next) => {
       message: 'Leave application submitted successfully',
     });
 
-    // Notify Admins
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify Admin about the new leave request
+    if (process.env.ADMIN_EMAIL) {
+      sendEmail({
+        to: process.env.ADMIN_EMAIL,
+        subject: `🔔 New Leave Request: ${req.user.name}`,
+        html: leaveRequestAdminTemplate({
+          employeeName: req.user.name,
+          leaveType,
+          startDate: new Date(startDate).toLocaleDateString('en-IN'),
+          endDate: new Date(endDate).toLocaleDateString('en-IN'),
+          reason,
+          totalDays
+        })
+      }).catch(err => console.error('Leave Request Admin Email failed:', err));
+    }
+
+    // Notify Employee that their request has been received (ADDED)
+    if (req.user.email) {
+        sendEmail({
+          to: req.user.email,
+          subject: '📝 Your Leave Request has been submitted!',
+          html: leaveRequestAdminTemplate({
+            employeeName: req.user.name,
+            leaveType,
+            startDate: new Date(startDate).toLocaleDateString('en-IN'),
+            endDate: new Date(endDate).toLocaleDateString('en-IN'),
+            reason,
+            totalDays
+          }).replace(`A new leave request has been submitted by <strong>${req.user.name}</strong>.`, `Your leave request for <strong>${leaveType}</strong> has been successfully submitted and is awaiting approval.`)
+        }).catch(err => console.error('Leave Request Employee Confirmation failed:', err));
+    }
+    // --- END EMAIL NOTIFICATION ---
+
+    // Notify Admins (System Notifications)
     const admins = await User.find({ role: 'admin' });
     const notifications = admins.map(admin => ({
       recipient: admin._id,
@@ -330,7 +370,7 @@ const approveLeave = async (req, res, next) => {
     const { id } = req.params;
     const adminId = req.user._id;
 
-    const leave = await Leave.findById(id);
+    const leave = await Leave.findById(id).populate('userId', 'name email');
 
     if (!leave) {
       return res.status(404).json({
@@ -352,12 +392,12 @@ const approveLeave = async (req, res, next) => {
     if (leave.leaveType !== 'unpaid') {
       const year = new Date(leave.startDate).getFullYear();
       let leaveBalance = await LeaveBalance.findOne({
-        userId: leave.userId,
+        userId: leave.userId._id,
         year,
       });
 
       if (!leaveBalance) {
-        leaveBalance = await LeaveBalance.create({ userId: leave.userId, year });
+        leaveBalance = await LeaveBalance.create({ userId: leave.userId._id, year });
       }
 
       if (leaveBalance[leave.leaveType].remaining < leave.totalDays) {
@@ -389,15 +429,33 @@ const approveLeave = async (req, res, next) => {
       message: 'Leave request approved successfully',
     });
 
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify Employee about leave approval
+    if (leave.userId && leave.userId.email) {
+      sendEmail({
+        to: leave.userId.email,
+        subject: '🎉 Your Leave Request has been Approved',
+        html: leaveApprovedTemplate({
+          employeeName: leave.userId.name,
+          leaveType: leave.leaveType,
+          startDate: new Date(leave.startDate).toLocaleDateString('en-IN'),
+          endDate: new Date(leave.endDate).toLocaleDateString('en-IN'),
+          totalDays: leave.totalDays,
+          adminComment: '' // Can add specific comment if needed
+        })
+      }).catch(err => console.error('Leave Approval Email failed:', err));
+    }
+    // --- END EMAIL NOTIFICATION ---
+
     // ✅ Clean Up Admin Notifications (Mark as read for everyone)
     await Notification.updateMany(
       { referenceId: id, type: 'leave_request' },
       { $set: { isRead: true } }
     );
 
-    // Notify Employee
+    // Notify Employee (System Notifications)
     await Notification.create({
-      recipient: leave.userId,
+      recipient: leave.userId._id,
       sender: adminId,
       type: 'leave_approved',
       title: 'Leave Approved',
@@ -431,7 +489,7 @@ const rejectLeave = async (req, res, next) => {
     const { adminComment } = req.body;
     const adminId = req.user._id;
 
-    const leave = await Leave.findById(id);
+    const leave = await Leave.findById(id).populate('userId', 'name email');
 
     if (!leave) {
       return res.status(404).json({
@@ -469,15 +527,32 @@ const rejectLeave = async (req, res, next) => {
       message: 'Leave request rejected',
     });
 
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify Employee about leave rejection
+    if (leave.userId && leave.userId.email) {
+      sendEmail({
+        to: leave.userId.email,
+        subject: '⚠️ Notification: Leave Request Update',
+        html: leaveRejectedTemplate({
+          employeeName: leave.userId.name,
+          leaveType: leave.leaveType,
+          startDate: new Date(leave.startDate).toLocaleDateString('en-IN'),
+          endDate: new Date(leave.endDate).toLocaleDateString('en-IN'),
+          adminComment: adminComment
+        })
+      }).catch(err => console.error('Leave Rejection Email failed:', err));
+    }
+    // --- END EMAIL NOTIFICATION ---
+
     // ✅ Clean Up Admin Notifications
     await Notification.updateMany(
       { referenceId: id, type: 'leave_request' },
       { $set: { isRead: true } }
     );
 
-    // Notify Employee
+    // Notify Employee (System Notifications)
     await Notification.create({
-      recipient: leave.userId,
+      recipient: leave.userId._id,
       sender: adminId,
       type: 'leave_rejected',
       title: 'Leave Rejected',

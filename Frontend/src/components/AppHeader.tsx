@@ -172,8 +172,24 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onMenuClick }) => {
           </AnimatePresence>
         </div>
 
-        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm border border-primary/20">
-          {user?.name?.charAt(0)}
+        <div 
+          onClick={() => navigate('/profile')} 
+          className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm border border-primary/20 cursor-pointer overflow-hidden"
+        >
+          {user?.profilePhoto ? (
+            <img 
+              src={`${import.meta.env.VITE_API_URL.replace('/api', '')}/${user.profilePhoto}`} 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                if ((e.target as HTMLImageElement).parentElement) {
+                  (e.target as HTMLImageElement).parentElement!.innerText = user?.name?.charAt(0) || '?';
+                }
+              }}
+            />
+          ) : (
+            user?.name?.charAt(0)
+          )}
         </div>
       </div>
     </header>

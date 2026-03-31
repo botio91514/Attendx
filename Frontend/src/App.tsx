@@ -22,6 +22,7 @@ import Settings from "@/pages/admin/Settings";
 import Announcements from "@/pages/admin/Announcements";
 import AdminHolidays from "@/pages/admin/Holidays";
 import Payroll from "@/pages/admin/Payroll";
+import AdminEmployeeProfile from "@/pages/admin/AdminEmployeeProfilePage";
 import NotFound from "./pages/NotFound";
 
 const App = () => (
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/admin/reports" element={<Reports />} />
               <Route path="/admin/leaves" element={<LeaveRequests />} />
               <Route path="/admin/employees" element={<Employees />} />
+              <Route path="/admin/employee/:id" element={<AdminEmployeeProfile />} />
               <Route path="/admin/settings" element={<Settings />} />
               <Route path="/admin/holidays" element={<AdminHolidays />} />
               <Route path="/admin/announcements" element={<Announcements />} />

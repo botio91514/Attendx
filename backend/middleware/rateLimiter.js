@@ -1,14 +1,14 @@
 const rateLimit = require('express-rate-limit');
 
 /**
- * General rate limiter - 1000 requests per 15 minutes per IP
+ * General rate limiter - 10000 requests per 1 minute per IP
  */
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Increased for development and testing
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10000, // Very high for development
   message: {
     success: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes',
+    message: 'Too many requests from this IP, please try again after 1 minute',
     errors: [],
   },
   standardHeaders: true, 
@@ -16,14 +16,14 @@ const generalLimiter = rateLimit({
 });
 
 /**
- * Stricter rate limiter for auth routes - 100 requests per 15 minutes per IP
+ * Stricter rate limiter for auth routes - 500 requests per 1 minute per IP
  */
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Increased for development and testing
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 500, // Increased for testing
   message: {
     success: false,
-    message: 'Too many authentication attempts, please try again after 15 minutes',
+    message: 'Too many authentication attempts, please try again after 1 minute',
     errors: [],
   },
   standardHeaders: true,
@@ -32,15 +32,14 @@ const authLimiter = rateLimit({
 });
 
 /**
- * API rate limiter - 1000 requests per 15 minutes per IP
- * For general API usage
+ * API rate limiter - 10000 requests per 1 minute per IP
  */
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Increased for development and testing
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10000, // Very high for development
   message: {
     success: false,
-    message: 'Too many API requests from this IP, please try again after 15 minutes',
+    message: 'Too many API requests from this IP, please try again after 1 minute',
     errors: [],
   },
   standardHeaders: true,

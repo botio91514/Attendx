@@ -10,13 +10,21 @@ import {
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } };
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
 const EmployeeDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { timeString } = useClock();
+
+  useEffect(() => {
+    if (user && user.role === 'admin') {
+      navigate('/admin');
+    }
+  }, [user, navigate]);
   const [status, setStatus] = useState<'idle' | 'working' | 'break' | 'completed'>('idle');
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);

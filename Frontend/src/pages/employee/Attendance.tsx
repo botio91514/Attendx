@@ -3,12 +3,22 @@ import { motion } from 'framer-motion';
 import { getStatusColor } from '@/utils/statusUtils';
 import EmptyState from '@/components/EmptyState';
 import { Download, ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, List, CheckCircle2, XCircle, Clock, Palmtree } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
 const AttendancePage: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    if (user && user.role === 'admin') {
+      navigate('/admin');
+    }
+  }, [user, navigate]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'calendar' | 'list'>('calendar');

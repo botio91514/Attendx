@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
+const fs = require('fs');
+const path = require('path');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, apiLimiter } = require('./middleware/rateLimiter');
@@ -14,8 +17,21 @@ connectDB();
 
 const app = express();
 
+// Middleware
+app.use(cookieParser());
+
 // Trust proxy for Render/Cloud hosting (required for express-rate-limit)
 app.set('trust proxy', 1);
+
+// Static files for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Ensure upload directories exist on startup
+const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('📁 Profile photo upload directory created');
+}
 
 /**
  * Middleware
@@ -40,6 +56,7 @@ app.use(generalLimiter);
  */
 // Mount specific route files
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', require('./routes/authRefresh'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/leave', require('./routes/leave'));
 app.use('/api/employees', require('./routes/employees'));
@@ -47,6 +64,8 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/holidays', require('./routes/holidays'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/profile', require('./routes/profileRoutes')); // Added for Profile Management
+app.use('/api/settings', require('./routes/settings'));
 app.use('/api/payroll', require('./routes/payroll'));
 
 // Root route
@@ -67,6 +86,11 @@ app.use(errorHandler);
 
 // Start Server
 const PORT = process.env.PORT || 5000;
+
+// --- CRON JOBS (ADDED) ---
+const { startCheckoutReminderJob } = require('./jobs/autoCheckoutReminder');
+startCheckoutReminderJob();
+// --- END CRON JOBS ---
 
 const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);

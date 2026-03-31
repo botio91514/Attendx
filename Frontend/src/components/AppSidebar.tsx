@@ -28,6 +28,7 @@ const adminNav = [
   { label: 'Payroll', icon: CircleDollarSign, path: '/admin/payroll' },
   { label: 'Notice Board', icon: Megaphone, path: '/admin/announcements' },
   { label: 'Office Calendar', icon: Calendar, path: '/admin/holidays' },
+  { label: 'My Profile', icon: User, path: '/profile' },
   { label: 'Office Settings', icon: SettingsIcon, path: '/admin/settings' },
 ];
 
@@ -96,9 +97,23 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
       {!collapsed && (
         <div className="px-4 py-4 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
-              {user?.name?.charAt(0)}
-            </div>
+            <div 
+          onClick={() => navigate('/profile')} 
+          className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm border border-primary/20 cursor-pointer overflow-hidden"
+        >
+          {user?.profilePhoto ? (
+            <img 
+              src={`${import.meta.env.VITE_API_URL.replace('/api', '')}/${user.profilePhoto}`} 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).parentElement!.innerText = user?.name?.charAt(0) || '?';
+              }}
+            />
+          ) : (
+            user?.name?.charAt(0)
+          )}
+        </div>
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
               <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary capitalize">{user?.role}</span>

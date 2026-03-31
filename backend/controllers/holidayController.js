@@ -1,5 +1,8 @@
 const Holiday = require('../models/Holiday');
 const { validationResult } = require('express-validator');
+const { sendEmail } = require('../utils/emailService');
+const { broadcastNoticeTemplate } = require('../utils/emailTemplates');
+const User = require('../models/User');
 
 /**
  * @desc    Get all holidays
@@ -51,6 +54,34 @@ const createHoliday = async (req, res, next) => {
       data: holiday,
       message: 'Holiday created successfully',
     });
+
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify all active employees about the new holiday
+    const activeEmployees = await User.find({ role: 'employee', isActive: true });
+    const istDate = new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+
+    const broadcastHoliday = async () => {
+      for (let i = 0; i < activeEmployees.length; i += 10) {
+        const batch = activeEmployees.slice(i, i + 10);
+        await Promise.allSettled(batch.map(emp => 
+          sendEmail({
+            to: emp.email,
+            subject: `🎁 New Public Holiday: ${title}`,
+            html: broadcastNoticeTemplate({
+              employeeName: emp.name,
+              noticeTitle: `New Holiday: ${title}`,
+              noticeContent: `Greetings! Management has declared a public holiday on ${istDate}${description ? `. Details: ${description}` : ''}. Have a great time!`,
+              postedBy: req.user.name,
+              postedAt: new Date().toLocaleDateString('en-IN')
+            })
+          })
+        ));
+      }
+    };
+
+    broadcastHoliday().catch(err => console.error('Holiday Broadcast failed:', err));
+    // --- END EMAIL NOTIFICATION ---
+
   } catch (error) {
     next(error);
   }

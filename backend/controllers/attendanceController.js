@@ -11,6 +11,8 @@ const {
   getMonthRange,
   calculateStats,
 } = require('../utils/attendanceHelpers');
+const { sendEmail } = require('../utils/emailService');
+const { lateArrivalTemplate } = require('../utils/emailTemplates');
 
 /**
  * @desc    Check-in for the day
@@ -28,6 +30,16 @@ const checkIn = async (req, res, next) => {
 
     // Guard: reject if already checked in today
     const existing = await Attendance.findOne({ userId, date: today });
+    
+    // Check if user is an admin - skip attendance for admins
+    if (req.user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Administrators do not need to record daily attendance',
+        errors: [],
+      });
+    }
+
     if (existing && existing.checkIn) {
       return res.status(400).json({
         success: false,
@@ -88,6 +100,23 @@ const checkIn = async (req, res, next) => {
       },
       message: 'Check-in recorded successfully',
     });
+
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Notify Employee about late arrival
+    if (attendance.status === 'late' && req.user.email) {
+      const minutesLate = currentTotalMin - (startH * 60 + startM);
+      sendEmail({
+        to: req.user.email,
+        subject: '⏰ Attendance Alert: Late Arrival Logged',
+        html: lateArrivalTemplate({
+          employeeName: req.user.name,
+          checkInTime: now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          officeStartTime: settings?.officeStartTime || '09:15',
+          minutesLate
+        })
+      }).catch(err => console.error('Late Arrival Email failed:', err));
+    }
+    // --- END EMAIL NOTIFICATION ---
 
     // Fire-and-forget admin notifications after responding
     const admins = await User.find({ role: 'admin' });
@@ -701,11 +730,13 @@ const getTodayStats = async (req, res, next) => {
 
     todayAttendance.forEach((record) => {
       stats.checkedInCount++;
-      if (record.status === 'present' || record.status === 'late' || record.status === 'half-day') {
+      if (record.status === 'present') {
         stats.present++;
+      } else if (record.status === 'late') {
+        stats.late++;
+      } else if (record.status === 'half-day') {
+        stats.halfDay++;
       }
-      if (record.status === 'late') stats.late++;
-      if (record.status === 'half-day') stats.halfDay++;
     });
 
     // Calculate not checked in

@@ -3,6 +3,11 @@ const User = require('../models/User');
 const LeaveBalance = require('../models/LeaveBalance');
 const { generateToken } = require('../config/jwt');
 const { getCurrentYear } = require('../utils/leaveHelpers');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { sendEmail } = require('../utils/emailService');
+const { welcomeEmployeeTemplate, passwordResetTemplate } = require('../utils/emailTemplates');
 
 /**
  * @desc    Register new employee (Admin only)
@@ -33,6 +38,9 @@ const register = async (req, res, next) => {
       });
     }
 
+    // Capture plain password for welcome email BEFORE it is hashed by middleware
+    const tempPassword = password;
+
     // Create user
     const user = await User.create({
       name,
@@ -44,6 +52,19 @@ const register = async (req, res, next) => {
       ...(baseSalary != null && { baseSalary }),
       ...(employeeId && { employeeId }),
     });
+
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    const loginUrl = (process.env.CLIENT_URL || 'http://localhost:5173') + '/login';
+    sendEmail({
+      to: email,
+      subject: '👋 Welcome to AttendX - Your HR Dashboard is Ready!',
+      html: welcomeEmployeeTemplate({
+        employeeName: user.name,
+        email: user.email,
+        password: password,
+      })
+    }).catch(err => console.error('Welcome Email failed:', err));
+    // --- END EMAIL NOTIFICATION ---
 
     // Create leave balance for the new employee
     await LeaveBalance.create({
@@ -68,6 +89,87 @@ const register = async (req, res, next) => {
 };
 
 /**
+ * @desc    Request password reset link
+ * @route   POST /api/auth/forgot-password
+ * @access  Public
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found with this email' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Hash and store
+    const salt = await bcrypt.genSalt(10);
+    user.resetToken = await bcrypt.hash(resetToken, salt);
+    user.resetTokenExpiry = Date.now() + 15 * 60 * 1000; // 15 mins
+    await user.save();
+
+    // Send Email
+    const resetUrl = (process.env.CLIENT_URL || 'http://localhost:5173') + '/reset-password?token=' + resetToken;
+    
+    sendEmail({
+      to: user.email,
+      subject: '🔑 AttendX Password Reset Request',
+      html: passwordResetTemplate({
+        employeeName: user.name,
+        resetUrl: resetUrl,
+      })
+    }).catch(err => console.error('Reset Email failed:', err));
+
+    res.status(200).json({ success: true, message: 'Password reset link sent to your email' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Apply new password using token
+ * @route   POST /api/auth/reset-password
+ * @access  Public
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Token and new password are required' });
+    }
+
+    // Find all users with active tokens (minimal set)
+    const users = await User.find({ resetTokenExpiry: { $gt: Date.now() } }).select('+resetToken');
+    
+    let targetUser = null;
+    for (const u of users) {
+      const isMatch = await bcrypt.compare(token, u.resetToken);
+      if (isMatch) {
+        targetUser = u;
+        break;
+      }
+    }
+
+    if (!targetUser) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+    }
+
+    // Update password
+    targetUser.password = newPassword;
+    targetUser.resetToken = undefined;
+    targetUser.resetTokenExpiry = undefined;
+    await targetUser.save();
+
+    res.status(200).json({ success: true, message: 'Password updated successfully. You can now login.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Login user
  * @route   POST /api/auth/login
  * @access  Public
@@ -84,7 +186,7 @@ const login = async (req, res, next) => {
       });
     }
 
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     // Find user and include password for comparison
     const user = await User.findOne({ email }).select('+password');
@@ -117,8 +219,39 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Generate token
-    const token = generateToken({ id: user._id });
+    // --- REFRESH TOKEN SYSTEM (ADDED) ---
+    // Generate Access Token (15m)
+    const accessToken = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    // Refresh Token logic
+    const refreshExpiry = rememberMe ? '30d' : '1d';
+    const refreshExpiryMs = rememberMe 
+      ? 30 * 24 * 60 * 60 * 1000 
+      : 24 * 60 * 60 * 1000;
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: refreshExpiry }
+    );
+
+    // Save refreshToken (hashed) to DB
+    user.refreshToken = await bcrypt.hash(refreshToken, 10);
+    user.refreshTokenExpiry = new Date(Date.now() + refreshExpiryMs);
+    await user.save();
+
+    // Send refreshToken as HTTP-only cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: refreshExpiryMs
+    });
+    // --- END REFRESH TOKEN SYSTEM ---
 
     res.status(200).json({
       success: true,
@@ -134,9 +267,40 @@ const login = async (req, res, next) => {
           avatar: user.avatar,
           isActive: user.isActive,
         },
-        token,
+        token: accessToken, // Using new 15m token
       },
       message: 'Login successful',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Logout user and clear tokens
+ * @route   POST /api/auth/logout
+ * @access  Private
+ */
+const logout = async (req, res, next) => {
+  try {
+    // Clear refreshToken cookie (ADDED)
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    });
+
+    // Nullify refreshToken in DB (ADDED)
+    if (req.user) {
+      await User.findByIdAndUpdate(req.user._id, {
+        refreshToken: null,
+        refreshTokenExpiry: null
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
     });
   } catch (error) {
     next(error);
@@ -285,12 +449,26 @@ const changePasswordValidation = [
     .withMessage('New password must be at least 6 characters'),
 ];
 
+const forgotPasswordValidation = [
+  body('email').isEmail().withMessage('Please provide a valid email'),
+];
+
+const resetPasswordValidation = [
+  body('token').notEmpty().withMessage('Token is required'),
+  body('newPassword').isLength({ min: 6 }).withMessage('Password must be 6+ characters'),
+];
+
 module.exports = {
   register,
   login,
+  logout,
   getMe,
   changePassword,
+  forgotPassword,
+  resetPassword,
   registerValidation,
   loginValidation,
   changePasswordValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation,
 };

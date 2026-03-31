@@ -2,6 +2,8 @@ const Announcement = require('../models/Announcement');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { validationResult } = require('express-validator');
+const { sendEmail } = require('../utils/emailService');
+const { broadcastNoticeTemplate } = require('../utils/emailTemplates');
 
 /**
  * @desc    Get all announcements (Filtered by active)
@@ -49,8 +51,8 @@ const createAnnouncement = async (req, res, next) => {
       createdBy: req.user._id,
     });
 
-    // 🚀 Global Event Dispatcher: Notify target audience
-    const targetQuery = {};
+    // 🚀 Global Event Dispatcher: Notify target audience (System Notifications)
+    const targetQuery = { isActive: true };
     if (announcement.targetRole && announcement.targetRole !== 'all') {
       targetQuery.role = announcement.targetRole;
     }
@@ -58,7 +60,39 @@ const createAnnouncement = async (req, res, next) => {
     // Fetch all applicable users
     const targetUsers = await User.find(targetQuery);
     
-    // Queue mass-notifications
+    // --- EMAIL NOTIFICATION (ADDED) ---
+    // Broadcast via Email in batches of 10
+    const istOptions = { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' };
+    const postedAtIST = new Date().toLocaleString('en-IN', istOptions);
+
+    const emailRecipients = targetUsers.filter(u => u.role === 'employee' && u.email);
+    
+    const sendBatch = async (users) => {
+      await Promise.allSettled(users.map(user => 
+        sendEmail({
+          to: user.email,
+          subject: `📢 Notification: ${title}`,
+          html: broadcastNoticeTemplate({
+            employeeName: user.name,
+            noticeTitle: title,
+            noticeContent: content,
+            postedBy: req.user.name,
+            postedAt: postedAtIST
+          })
+        })
+      ));
+    };
+
+    // Process in batches of 10 to prevent SMTP throttling
+    (async () => {
+      for (let i = 0; i < emailRecipients.length; i += 10) {
+        const batch = emailRecipients.slice(i, i + 10);
+        await sendBatch(batch);
+      }
+    })().catch(err => console.error('Broadcast Broadcast Email Job failed:', err));
+    // --- END EMAIL NOTIFICATION ---
+
+    // Queue mass-notifications (System UI Notifications)
     const notificationPromises = targetUsers.map(user => {
       // Do not ping the author who created the post
       if (user._id.toString() !== req.user._id.toString()) {
