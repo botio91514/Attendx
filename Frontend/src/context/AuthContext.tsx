@@ -37,6 +37,7 @@ interface AuthContextType {
   logout: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  isChecking: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,6 +57,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('attendx_theme') as 'dark' | 'light') || 'dark';
   });
+
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light');
@@ -80,13 +83,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setToken(newToken);
             localStorage.setItem('attendx_token', newToken);
             console.log('✅ Session restored successfully');
-          } else {
+          } else if (response.status === 401) {
             console.warn('❌ Session expired or invalid');
             logoutLocal();
+          } else {
+            console.warn('⚠️ Server returned non-auth error during session restoration');
+            // Don't logout for server errors, keep the local user to show the UI
           }
         } catch (error) {
-          console.error('Session check failed:', error);
+          console.error('Session check failed (Network?):', error);
+          // Don't logout on network error, the app will retry on actual API calls via api.ts
+        } finally {
+          setIsChecking(false);
         }
+      } else {
+        setIsChecking(false);
       }
     };
     
@@ -164,7 +175,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       login, 
       logout, 
       theme, 
-      toggleTheme 
+      toggleTheme,
+      isChecking
     }}>
       {children}
     </AuthContext.Provider>

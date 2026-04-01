@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, Zap, Loader2 } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,6 +14,12 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [shake, setShake] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  React.useEffect(() => {
+    if (isAuthenticated && !loading) {
+      navigate(user?.role === 'admin' ? '/admin' : '/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

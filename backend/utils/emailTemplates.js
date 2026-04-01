@@ -36,11 +36,11 @@ const emailWrapper = (content, accentColor = '#6366f1') => `
             padding: 40px 48px 0;
             text-align: center;
           ">
-            <!-- Logo Badge -->
-            <div style="display:inline-block;background:linear-gradient(135deg,${accentColor},#818cf8);border-radius:14px;padding:12px 24px;margin-bottom:16px;">
+            <!-- Logo Badge (Simplified for visibility) -->
+            <div style="display:inline-block;background-color:${accentColor};border-radius:14px;padding:14px 28px;margin-bottom:16px;">
               <span style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:1px;text-transform:uppercase;">AttendX</span>
             </div>
-            <p style="margin:0;color:#94a3b8;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:600;">Workforce Hub Pro</p>
+            <p style="margin:0;color:#64748b;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:700;">Workforce Intelligence Pro</p>
           </td>
         </tr>
 
@@ -118,16 +118,23 @@ const infoCard = (rows, borderColor = '#6366f1') => `
 const statusBadge = (text, color) => `
   <span style="
     display:inline-block;
-    background:${color}15;
+    background-color:#f1f5f9;
     color:${color};
     border-radius:6px;
-    padding:4px 10px;
+    padding:6px 12px;
     font-size:11px;
-    font-weight:700;
+    font-weight:800;
     text-transform:uppercase;
     letter-spacing:0.5px;
+    border: 1px solid #e2e8f0;
   ">${text}</span>
 `;
+
+// Helper for live links
+const getLiveUrl = (path = '') => {
+  const base = (process.env.CLIENT_URL || 'https://gatistwamhrms.netlify.app').split(',')[0].trim();
+  return `${base}${path}`;
+};
 
 // ─────────────────────────────────────────────
 // 1. WELCOME EMAIL (Admin → Employee)
@@ -142,10 +149,10 @@ const welcomeEmployeeTemplate = ({ employeeName, email, password }) => emailWrap
   ])}
 
   <div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;padding:16px 20px;margin:20px 0;">
-    <p style="margin:0;color:#92400e;font-size:13px;font-weight:500;">⚠️ Important: Change your password immediately after your first sign-in for security.</p>
+    <p style="margin:0;color:#92400e;font-size:13px;font-weight:600;">⚠️ Important: Change your password immediately after your first sign-in for security.</p>
   </div>
 
-  ${premiumButton('Securely Login Now', `${process.env.CLIENT_URL}/login`, '#6366f1')}
+  ${premiumButton('Securely Login Now', getLiveUrl('/login'), '#6366f1')}
 `, '#6366f1');
 
 // ─────────────────────────────────────────────
@@ -178,7 +185,7 @@ const leaveRequestAdminTemplate = ({ employeeName, leaveType, startDate, endDate
     { label: '💬 Reason', value: reason }
   ], '#f59e0b')}
 
-  ${premiumButton('Review in Admin Dashboard', `${process.env.CLIENT_URL}/admin/leaves`, '#f59e0b')}
+  ${premiumButton('Review in Admin Dashboard', getLiveUrl('/admin/leaves'), '#f59e0b')}
 `, '#f59e0b');
 
 // ─────────────────────────────────────────────
@@ -198,7 +205,7 @@ const leaveApprovedTemplate = ({ employeeName, leaveType, startDate, endDate, ad
     ...(adminComment ? [{ label: '💬 Admin Note', value: adminComment }] : [])
   ], '#10b981')}
 
-  ${premiumButton('View My Dashboard', `${process.env.CLIENT_URL}/dashboard`, '#10b981')}
+  ${premiumButton('View My Dashboard', getLiveUrl('/dashboard'), '#10b981')}
 `, '#10b981');
 
 // ─────────────────────────────────────────────
@@ -234,7 +241,7 @@ const lateArrivalTemplate = ({ employeeName, checkInTime, officeStartTime, minut
     <p style="margin:0;color:#9a3412;font-size:13px;line-height:1.6;">Punctuality helps us maintain smooth operations. Please ensure timely arrival for future shifts.</p>
   </div>
 
-  ${premiumButton('Review My Attendance', `${process.env.CLIENT_URL}/dashboard`, '#f97316')}
+  ${premiumButton('Review My Attendance', getLiveUrl('/dashboard'), '#f97316')}
 `, '#f97316');
 
 // ─────────────────────────────────────────────
@@ -244,20 +251,20 @@ const payslipTemplate = ({ employeeName, month, year, basicSalary, deductions, b
   <h1 style="margin:0 0 12px;font-size:26px;font-weight:800;color:#0f172a;">Salary <span style="color:#10b981;">Processed</span></h1>
   <p style="margin:0 0 28px;color:#64748b;font-size:15px;line-height:1.7;">Hello <strong>${employeeName}</strong>, your salary for <strong>${month} ${year}</strong> has been successfully credited.</p>
 
-  <!-- Net Salary Feature -->
-  <div style="background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%);border:1px solid #bbf7d0;border-radius:20px;padding:32px;text-align:center;margin:24px 0;">
-    <p style="margin:0 0 4px;color:#059669;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Net Payable Salary</p>
-    <p style="margin:0;font-size:42px;font-weight:800;color:#166534;">₹${netSalary.toLocaleString('en-IN')}</p>
+  <!-- Net Salary Feature (Simplified Colors) -->
+  <div style="background-color:#f0fdf4;border:2px solid #bbf7d0;border-radius:24px;padding:32px;text-align:center;margin:24px 0;">
+    <p style="margin:0 0 4px;color:#166534;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">Net Payable Salary</p>
+    <p style="margin:0;font-size:42px;font-weight:900;color:#15803d;letter-spacing:-1px;">₹${netSalary.toLocaleString('en-IN')}</p>
   </div>
 
   ${infoCard([
     { label: '💵 Basic Pay', value: `₹${basicSalary.toLocaleString('en-IN')}` },
     { label: '🎁 Total Bonuses', value: `<span style="color:#10b981;">+₹${bonuses.toLocaleString('en-IN')}</span>` },
-    { label: '📉 Total Deductions', value: `<span style="color:#ef4444;">-₹${deductions.toLocaleString('en-IN')}</span>` },
+    { label: '📉 Total Deductions', value: `<span style="color:#dc2626;">-₹${deductions.toLocaleString('en-IN')}</span>` },
     { label: '✅ Days Tracked', value: `${presentDays} Present / ${absentDays} Absent` }
   ], '#10b981')}
 
-  ${premiumButton('Download Full Payslip', `${process.env.CLIENT_URL}/dashboard`, '#10b981')}
+  ${premiumButton('Download Full Payslip', getLiveUrl('/dashboard'), '#10b981')}
 `, '#10b981');
 
 // ─────────────────────────────────────────────
@@ -278,7 +285,7 @@ const checkoutReminderTemplate = ({ employeeName, checkInTime, todayDate, curren
     <p style="margin:0;color:#92400e;font-size:13px;font-weight:500;">⚡ Please checkout now to ensure your working hours are accurately captured for payroll.</p>
   </div>
 
-  ${premiumButton('Complete Checkout Now', `${process.env.CLIENT_URL}/dashboard`, '#f59e0b')}
+  ${premiumButton('Complete Checkout Now', getLiveUrl('/dashboard'), '#f59e0b')}
 `, '#f59e0b');
 
 // ─────────────────────────────────────────────
@@ -303,7 +310,7 @@ const absentAlertTemplate = ({ employeeName, todayDate, officeStartTime, gracePe
     <p style="margin:0;color:#991b1b;font-size:13px;line-height:1.6;">If you are unable to report for work, please apply for leave immediately through the portal.</p>
   </div>
 
-  ${premiumButton('Go to My Portal', `${process.env.CLIENT_URL}/dashboard`, '#ef4444')}
+  ${premiumButton('Go to My Portal', getLiveUrl('/dashboard'), '#ef4444')}
 `, '#ef4444');
 
 // ─────────────────────────────────────────────
@@ -323,7 +330,7 @@ const broadcastNoticeTemplate = ({ employeeName, noticeTitle, noticeContent, pos
     { label: '📅 Dated', value: postedAt }
   ])}
 
-  ${premiumButton('View All Announcements', `${process.env.CLIENT_URL}/notices`, '#6366f1')}
+  ${premiumButton('View All Announcements', getLiveUrl('/notices'), '#6366f1')}
 `, '#6366f1');
 
 // ─────────────────────────────────────────────

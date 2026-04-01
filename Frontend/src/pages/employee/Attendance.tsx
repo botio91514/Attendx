@@ -73,6 +73,13 @@ const AttendancePage: React.FC = () => {
     return new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const formatWorkingHours = (minutes: number | null | undefined) => {
+    if (!minutes) return '0h 0m';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h ${m}m`;
+  };
+
   const renderCalendar = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -279,7 +286,7 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm text-muted-foreground">{formatDay(row.date)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatTime(row.checkIn)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{formatTime(row.checkOut)}</td>
-                      <td className="px-4 py-4 text-sm font-mono text-foreground">{row.totalWorkingHours || '0h 0m'}</td>
+                      <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.breaks?.length || 0} breaks</td>
                       <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{row.status}</span></td>
                     </tr>

@@ -86,6 +86,13 @@ const Reports: React.FC = () => {
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
 
+  const formatWorkingHours = (minutes: number | null | undefined) => {
+    if (!minutes) return '0h 0m';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h ${m}m`;
+  };
+
   const setDatePreset = (days: number) => {
     const to = new Date().toISOString().split('T')[0];
     const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -255,7 +262,7 @@ const Reports: React.FC = () => {
                         <td className="px-5 py-4 text-xs text-muted-foreground font-medium">{new Date(row.date).toLocaleDateString([], { weekday: 'long' })}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? new Date(row.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? new Date(row.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
-                        <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{(row.totalWorkingHours / 60).toFixed(1)}h</td>
+                        <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-5 py-4"><span className={getStatusBadge(row.status)}>{row.status}</span></td>
                         <td className="px-5 py-4 text-right">
                           <button onClick={() => { setSelectedEmp(row.userId); setViewMode('calendar'); }} className="p-2 hover:bg-primary/10 text-muted-foreground hover:text-primary rounded-lg transition-all" title="Detailed Calendar View"><Calendar className="w-4 h-4" /></button>

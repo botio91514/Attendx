@@ -48,10 +48,14 @@ const EmployeeDashboard: React.FC = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+
       const [todayRes, balanceRes, historyRes, settingsRes, holidayRes] = await Promise.all([
         api.get('/attendance/today'),
         api.get('/leave/balance'),
-        api.get('/attendance/history?limit=7'),
+        api.get(`/attendance/history?month=${month}&year=${year}&limit=31`),
         api.get('/settings'),
         api.get('/holidays')
       ]);
@@ -114,9 +118,15 @@ const EmployeeDashboard: React.FC = () => {
 
       if (historyRes.success && historyRes.data && Array.isArray(historyRes.data.attendance)) {
         setHistory(historyRes.data.attendance);
+        
+        // Only count actual presence (present, late, half-day)
+        const presenceCount = historyRes.data.attendance.filter((rec: any) => 
+          ['present', 'late', 'half-day'].includes(rec.status)
+        ).length;
+
         setStats(prev => ({
           ...prev,
-          daysPresent: historyRes.data.pagination.total.toString()
+          daysPresent: presenceCount.toString()
         }));
       }
     } catch (error) {

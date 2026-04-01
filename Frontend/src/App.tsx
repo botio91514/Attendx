@@ -24,6 +24,28 @@ import AdminHolidays from "@/pages/admin/Holidays";
 import Payroll from "@/pages/admin/Payroll";
 import AdminEmployeeProfile from "@/pages/admin/AdminEmployeeProfilePage";
 import NotFound from "./pages/NotFound";
+import { useAuth } from "@/context/AuthContext";
+import { Loader2 } from "lucide-react";
+
+// --- ROOT REDIRECT COMPONENT ---
+const RootRedirect = () => {
+  const { isAuthenticated, user, isChecking } = useAuth();
+  
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={user?.role === 'admin' ? '/admin' : '/dashboard'} replace />;
+  }
+  
+  return <Navigate to="/login" replace />;
+};
+// --- END ROOT REDIRECT ---
 
 const App = () => (
   <AuthProvider>
@@ -32,7 +54,7 @@ const App = () => (
         <Sonner position="top-right" closeButton richColors />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<LoginPage />} />
 
             {/* Employee routes */}

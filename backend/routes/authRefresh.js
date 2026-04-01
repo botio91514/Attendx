@@ -26,7 +26,7 @@ router.post('/refresh-token', async (req, res) => {
       res.clearCookie('refreshToken', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
       });
       return res.status(401).json({ success: false, message: 'Invalid refresh token' });
     }
@@ -47,7 +47,7 @@ router.post('/refresh-token', async (req, res) => {
       res.clearCookie('refreshToken', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
       });
       return res.status(401).json({ success: false, message: 'Refresh token expired' });
     }
