@@ -62,6 +62,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
+  // --- INITIAL CHECK ON STARTUP ---
+  useEffect(() => {
+    const checkSession = async () => {
+      // If we have a user/token in storage, verify if the session is still active via refresh-token
+      if (token) {
+        try {
+          const response = await fetch(`${API_URL}/auth/refresh-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const newToken = data.token;
+            setToken(newToken);
+            localStorage.setItem('attendx_token', newToken);
+            console.log('✅ Session restored successfully');
+          } else {
+            console.warn('❌ Session expired or invalid');
+            logoutLocal();
+          }
+        } catch (error) {
+          console.error('Session check failed:', error);
+        }
+      }
+    };
+    
+    checkSession();
+  }, []);
+
   const login = useCallback(async (email: string, password: string, rememberMe: boolean = false) => {
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
@@ -70,6 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password, rememberMe }),
+        credentials: 'include', // CRITICAL: Allow backend to set refreshToken cookie
       });
 
       const data = await response.json();
@@ -92,6 +124,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const logoutLocal = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem('attendx_user');
+    localStorage.removeItem('attendx_token');
+    window.location.href = '/login';
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await fetch(`${API_URL}/auth/logout`, {
@@ -99,16 +139,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        }
+        },
+        credentials: 'include', // CRITICAL: Clear refresh cookie on server
       });
     } catch (error) {
       console.error('Logout error:', error);
     }
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('attendx_user');
-    localStorage.removeItem('attendx_token');
-  }, [token]);
+    logoutLocal();
+  }, [token, logoutLocal]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => {
