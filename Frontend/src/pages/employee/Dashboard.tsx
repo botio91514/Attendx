@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import BreakTimer from '@/components/BreakTimer';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } };
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -43,7 +44,13 @@ const EmployeeDashboard: React.FC = () => {
 
   const [officeSettings, setOfficeSettings] = useState<any>(null);
 
-  const elapsed = useElapsedTime(checkInTime, todayBreaks);
+  const [breakStatus, setBreakStatus] = useState<any>(null);
+  const elapsed = useElapsedTime(
+    checkInTime, 
+    todayBreaks, 
+    breakStatus?.isOnBreak, 
+    breakStatus?.breakStartTime
+  );
 
   const fetchDashboardData = async () => {
     try {
@@ -52,13 +59,18 @@ const EmployeeDashboard: React.FC = () => {
       const month = now.getMonth() + 1;
       const year = now.getFullYear();
 
-      const [todayRes, balanceRes, historyRes, settingsRes, holidayRes] = await Promise.all([
+      const [todayRes, balanceRes, historyRes, settingsRes, holidayRes, breakStatusRes] = await Promise.all([
         api.get('/attendance/today'),
         api.get('/leave/balance'),
         api.get(`/attendance/history?month=${month}&year=${year}&limit=31`),
         api.get('/settings'),
-        api.get('/holidays')
+        api.get('/holidays'),
+        api.get('/attendance/break/status')
       ]);
+
+      if (breakStatusRes?.success) {
+        setBreakStatus(breakStatusRes.data);
+      }
 
       if (settingsRes.success) {
         setOfficeSettings(settingsRes.data);
@@ -82,9 +94,10 @@ const EmployeeDashboard: React.FC = () => {
 
       if (todayRes.success && todayRes.data && todayRes.data.attendance) {
         const attendance = todayRes.data.attendance;
+        
+        // Update status intelligently based on BOTH attendance and breakState (Fix for Bug 4)
         if (attendance.checkIn && !attendance.checkOut) {
-          const lastBreak = attendance.breaks?.[attendance.breaks.length - 1];
-          if (lastBreak && !lastBreak.breakEnd) {
+          if (breakStatusRes?.success && breakStatusRes.data.isOnBreak) {
             setStatus('break');
           } else {
             setStatus('working');
@@ -260,12 +273,17 @@ const EmployeeDashboard: React.FC = () => {
         <StatCard
           icon={<CheckCircle2 />}
           label="Today Status"
-          value={stats.todayStatus}
-          subtitle={stats.todayStatus === 'Not Checked In' ? 'Awaiting start' : `Started at ${stats.checkInDisplay}`}
+          value={status === 'break' ? 'On Break' : stats.todayStatus}
+          subtitle={
+            status === 'break' ? 'Break timer active' :
+            stats.todayStatus === 'Not Checked In' ? 'Awaiting start' : 
+            `Started at ${stats.checkInDisplay}`
+          }
           accentClass={
+            status === 'break' ? 'text-warning' :
             stats.todayStatus === 'Late' ? 'text-warning' :
-              stats.todayStatus === 'Absent' ? 'text-destructive' :
-                'text-success'
+            stats.todayStatus === 'Absent' ? 'text-destructive' :
+            'text-success'
           }
         />
         <StatCard icon={<Clock />} label="Net Working Time" value={status !== 'idle' ? elapsed : '00:00:00'} subtitle={status === 'working' ? 'Tracking live' : status === 'break' ? 'Paused (Break)' : 'Standby'} accentClass="text-primary" />
@@ -276,6 +294,9 @@ const EmployeeDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Control Panel */}
         <motion.div variants={fadeUp} className="lg:col-span-2 space-y-6">
+          {status !== 'idle' && status !== 'completed' && (
+            <BreakTimer />
+          )}
           <div className="glass-card p-8 relative overflow-hidden group">
             {/* Dynamic background glow */}
             <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-[100px] transition-colors duration-700 ${status === 'working' ? 'bg-success/20' : status === 'break' ? 'bg-warning/20' : 'bg-primary/10'
@@ -326,9 +347,6 @@ const EmployeeDashboard: React.FC = () => {
                     </motion.button>
                   ) : (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-4 justify-center">
-                      <button onClick={handleBreak} className="glow-button-warning flex items-center gap-2 px-6 py-3 font-semibold">
-                        {status === 'break' ? <><Play className="w-5 h-5 fill-current" /> RESUME WORK</> : <><Coffee className="w-5 h-5" /> TAKE A BREAK</>}
-                      </button>
                       <button onClick={handleCheckOut} className="glow-button-danger flex items-center gap-2 px-6 py-3 font-semibold">
                         <Square className="w-5 h-5 fill-current" /> FINISH DAY
                       </button>

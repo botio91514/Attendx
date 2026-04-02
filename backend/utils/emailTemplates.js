@@ -348,4 +348,24 @@ module.exports = {
   // Mapping other templates to shared wrapper logic if needed
   policyChangeTemplate: (data) => broadcastNoticeTemplate({...data, noticeTitle: 'Policy Update: ' + data.changeType, noticeContent: `Previous: ${data.oldValue}\nNew Policy: ${data.newValue}\nEffective From: ${data.effectiveFrom}`}),
   profileUpdatedByAdminTemplate: (data) => broadcastNoticeTemplate({...data, noticeTitle: 'Profile Information Updated', noticeContent: `The following profile fields were updated by the HR department: ${data.updatedFields.join(', ')}`}),
+  breakExceededTemplate: ({ employeeName, breakStartTime, allowedMinutes, elapsedMinutes }) => emailWrapper(`
+  <div style="text-align:center;margin-bottom:24px;">
+    <span style="display:inline-block;background:#fef2f2;border:1px solid #fee2e2;width:60px;height:60px;border-radius:30px;line-height:60px;font-size:24px;">⛔</span>
+  </div>
+  <h1 style="margin:0 0 12px;font-size:26px;font-weight:800;color:#0f172a;text-align:center;">Break Time <span style="color:#ef4444;">Exceeded</span></h1>
+  <p style="margin:0 0 28px;color:#64748b;font-size:15px;line-height:1.7;text-align:center;">Hello <strong>${employeeName}</strong>, our tracking system has detected that you have exceeded the allowed break duration for today.</p>
+
+  ${infoCard([
+    { label: '🕒 Break Started', value: breakStartTime },
+    { label: '⏳ Permitted Duration', value: `${allowedMinutes} minutes` },
+    { label: '⏱️ Current Duration', value: `<span style="color:#ef4444;font-weight:bold;">${elapsedMinutes} minutes</span>` },
+    { label: '📊 Status', value: statusBadge('Exceeded Policy', '#ef4444') }
+  ], '#ef4444')}
+
+  <div style="background:#fef2f2;border:1px solid #fee2e2;border-radius:12px;padding:16px 20px;margin:20px 0;">
+    <p style="margin:0;color:#991b1b;font-size:13px;line-height:1.6;font-weight:600;">⚡ Action Required: Please return to your workstation and end your break in the AttendX portal immediately.</p>
+  </div>
+
+  ${premiumButton('Return to Dashboard', getLiveUrl('/dashboard'), '#ef4444')}
+`, '#ef4444'),
 };

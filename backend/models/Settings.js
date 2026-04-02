@@ -21,6 +21,8 @@ const settingsSchema = new mongoose.Schema({
     type: Number,
     default: 60, // minutes allowed for break
   },
+  // Break Policy (Added)
+  breakDurationMinutes: { type: Number, default: 60 },
   workingDays: {
     type: [Number],
     default: [1, 2, 3, 4, 5, 6], // Mon-Sat (0=Sun, 1=Mon, ..., 6=Sat)

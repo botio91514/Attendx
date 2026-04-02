@@ -23,6 +23,7 @@ import Announcements from "@/pages/admin/Announcements";
 import AdminHolidays from "@/pages/admin/Holidays";
 import Payroll from "@/pages/admin/Payroll";
 import AdminEmployeeProfile from "@/pages/admin/AdminEmployeeProfilePage";
+import AdminBreakHistory from "@/pages/admin/BreakHistory";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2 } from "lucide-react";
@@ -79,6 +80,7 @@ const App = () => (
               <Route path="/admin/holidays" element={<AdminHolidays />} />
               <Route path="/admin/announcements" element={<Announcements />} />
               <Route path="/admin/payroll" element={<Payroll />} />
+              <Route path="/admin/breaks" element={<AdminBreakHistory />} />
               <Route path="/admin/register" element={<RegisterEmployee />} />
             </Route>
 

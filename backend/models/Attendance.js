@@ -58,6 +58,15 @@ const attendanceSchema = new mongoose.Schema(
       trim: true,
       maxlength: [500, 'Notes cannot exceed 500 characters'],
     },
+    // Break Management (Added)
+    break: {
+      startTime: { type: Date, default: null },
+      endTime: { type: Date, default: null },
+      durationMinutes: { type: Number, default: 0 },
+      isOnBreak: { type: Boolean, default: false },
+      exceededPolicy: { type: Boolean, default: false },
+      alertSent: { type: Boolean, default: false }
+    }
   },
   {
     timestamps: true,
@@ -121,12 +130,10 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
 
 // Pre-save middleware to auto-calculate fields
 attendanceSchema.pre('save', function (next) {
-  // Calculate total break time
-  if (this.breaks && this.breaks.length > 0) {
-    this.totalBreakTime = this.breaks.reduce((total, breakItem) => {
-      return total + (breakItem.duration || 0);
-    }, 0);
-  }
+  // Calculate total break time from both old and new systems (Fix for consistency)
+  const oldBreaksTotal = (this.breaks || []).reduce((total, b) => total + (b.duration || 0), 0);
+  const newBreakTotal = this.break?.durationMinutes || 0;
+  this.totalBreakTime = oldBreaksTotal + newBreakTotal;
 
   // Calculate working hours if both check-in and check-out exist
   if (this.checkIn && this.checkOut) {

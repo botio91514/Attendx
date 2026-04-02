@@ -138,7 +138,7 @@ const LiveAttendance: React.FC = () => {
                         {row.checkOut ? new Date(row.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                       </td>
                       <td className="px-5 py-4 text-sm font-mono text-muted-foreground">
-                        {row.breaks?.length || 0} breaks
+                        {row.totalBreakTime || 0} min
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-col gap-1">

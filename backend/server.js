@@ -98,9 +98,11 @@ const PORT = process.env.PORT || 5000;
 
 // --- CRON JOBS (ADDED) ---
 const { startCheckoutReminderJob, startAbsentAlertJob, startAutoCheckoutJob } = require('./jobs/autoCheckoutReminder');
+const { startBreakMonitorJob } = require('./jobs/breakMonitor.js');
 startCheckoutReminderJob();
 startAbsentAlertJob();
 startAutoCheckoutJob();
+startBreakMonitorJob();
 // --- END CRON JOBS ---
 
 const server = app.listen(PORT, () => {

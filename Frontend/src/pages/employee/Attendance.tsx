@@ -287,7 +287,7 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatTime(row.checkIn)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{formatTime(row.checkOut)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
-                      <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.breaks?.length || 0} breaks</td>
+                      <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
                       <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{row.status}</span></td>
                     </tr>
                   ))

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Clock, CalendarDays, User, LogOut, Sun, Moon,
   Users, Activity, FileText, ClipboardList, ChevronLeft, ChevronRight, Zap, UserPlus, Settings as SettingsIcon,
-  Calendar, Megaphone, CircleDollarSign, Palmtree
+  Calendar, Megaphone, CircleDollarSign, Palmtree, Coffee
 } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 
@@ -23,6 +23,7 @@ const adminNav = [
   { label: 'Live Status', icon: Activity, path: '/admin/live' },
   { label: 'Leave Requests', icon: ClipboardList, path: '/admin/leaves' },
   { label: 'Attendance Reports', icon: FileText, path: '/admin/reports' },
+  { label: 'Break Intelligence', icon: Coffee, path: '/admin/breaks' },
   { label: 'Employees', icon: Users, path: '/admin/employees' },
   { label: 'Register Employee', icon: UserPlus, path: '/admin/register' },
   { label: 'Payroll', icon: CircleDollarSign, path: '/admin/payroll' },

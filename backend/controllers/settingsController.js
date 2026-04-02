@@ -34,6 +34,7 @@ const updateSettings = async (req, res, next) => {
       lateGracePeriod, 
       halfDayThreshold, 
       maxBreakLimit,
+      breakDurationMinutes,
       workingDays
     } = req.body;
 
@@ -64,6 +65,7 @@ const updateSettings = async (req, res, next) => {
     // Other fields without granular change tracking for now
     if (halfDayThreshold !== undefined) settings.halfDayThreshold = halfDayThreshold;
     if (maxBreakLimit !== undefined) settings.maxBreakLimit = maxBreakLimit;
+    if (breakDurationMinutes !== undefined) settings.breakDurationMinutes = breakDurationMinutes;
     
     settings.updatedBy = req.user._id;
 

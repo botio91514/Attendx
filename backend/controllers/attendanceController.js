@@ -175,21 +175,39 @@ const checkOut = async (req, res, next) => {
       });
     }
 
-    // Check if there's an ongoing break
-    const ongoingBreak = attendance.breaks.find((b) => !b.breakEnd);
-    if (ongoingBreak) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please end your break before checking out',
-        errors: [],
-      });
+    // --- AUTO-END BREAK ON CHECKOUT (BUG 3 — FIX C) ---
+    const breakData = attendance.break || {};
+    if (breakData.isOnBreak) {
+      const autoBreakEnd = new Date();
+      const sessionDuration = Math.floor((autoBreakEnd - new Date(breakData.startTime)) / 60000);
+      const totalBreakMinutes = (breakData.durationMinutes || 0) + sessionDuration;
+
+      // Update break fields surgically
+      attendance.break.endTime = autoBreakEnd;
+      attendance.break.isOnBreak = false;
+      attendance.break.durationMinutes = totalBreakMinutes;
+      
+      const settings = await Settings.getSettings();
+      attendance.break.exceededPolicy = totalBreakMinutes > (settings.breakDurationMinutes || 60);
+      
+      // Update the compatibility field
+      attendance.totalBreakTime = totalBreakMinutes;
     }
+    // --- END AUTO-END BREAK ---
 
     // Fetch dynamic settings
     const settings = await Settings.getSettings();
 
     // Update check-out
     attendance.checkOut = now;
+
+    // --- RECALCULATE NET WORKING TIME (BUG 3 — FIX B) ---
+    const checkInTime = new Date(attendance.checkIn);
+    const checkOutTime = now;
+    const totalMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
+    const finalBreakMinutes = attendance.break?.durationMinutes || attendance.totalBreakTime || 0;
+    attendance.totalWorkingHours = Math.max(0, totalMinutes - finalBreakMinutes);
+    // --- END RECALCULATE ---
     // Attach settings for pre-save middleware
     attendance._settings = settings;
     await attendance.save();

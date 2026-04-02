@@ -13,6 +13,13 @@ const {
   historyValidation,
   reportValidation,
 } = require('../controllers/attendanceController');
+const { 
+  startBreak: startLunchBreak, 
+  endBreak: endLunchBreak, 
+  getBreakStatus, 
+  getBreakHistory, 
+  updateBreakPolicy 
+} = require('../controllers/breakController');
 const { protect } = require('../middleware/authMiddleware');
 const { isAdmin } = require('../middleware/isAdmin');
 const { apiLimiter } = require('../middleware/rateLimiter');
@@ -39,14 +46,21 @@ router.post('/checkout', checkOut);
  * @desc    Start a break
  * @access  Private (Employee)
  */
-router.post('/break/start', startBreak);
+router.post('/break/start', startLunchBreak);
 
 /**
  * @route   POST /api/attendance/break/end
  * @desc    End a break
  * @access  Private (Employee)
  */
-router.post('/break/end', endBreak);
+router.post('/break/end', endLunchBreak);
+
+/**
+ * @route   GET /api/attendance/break/status
+ * @desc    Get current break status
+ * @access  Private (Employee)
+ */
+router.get('/break/status', getBreakStatus);
 
 /**
  * @route   GET /api/attendance/today
@@ -83,5 +97,19 @@ router.get('/admin/report', isAdmin, reportValidation, getAttendanceReport);
  * @access  Private/Admin
  */
 router.get('/admin/stats', isAdmin, getTodayStats);
+
+/**
+ * @route   GET /api/attendance/admin/breaks
+ * @desc    Get all break records
+ * @access  Private/Admin
+ */
+router.get('/admin/breaks', isAdmin, getBreakHistory);
+
+/**
+ * @route   PUT /api/attendance/admin/policy/break
+ * @desc    Update break policy
+ * @access  Private/Admin
+ */
+router.put('/admin/policy/break', isAdmin, updateBreakPolicy);
 
 module.exports = router;

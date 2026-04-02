@@ -13,7 +13,7 @@ export const useClock = () => {
   return { now, timeString, dateString };
 };
 
-export const useElapsedTime = (startTime: Date | null, breaks: any[] = []) => {
+export const useElapsedTime = (startTime: Date | null, breaks: any[] = [], isOnBreak: boolean = false, breakStartTime: string | null = null) => {
   const [elapsed, setElapsed] = useState('00:00:00');
 
   useEffect(() => {
@@ -22,41 +22,38 @@ export const useElapsedTime = (startTime: Date | null, breaks: any[] = []) => {
       return;
     }
 
-    const calculate = () => {
-      const now = Date.now();
-      let totalMs = now - startTime.getTime();
+    const calculateSnapshot = () => {
+      const now = new Date();
+      let totalElapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
 
-      // Subtract duration of completed breaks
-      let breakMs = 0;
-      let onBreak = false;
-      let currentBreakStart = 0;
-
+      // 1. Calculate total duration of all COMPLETED breaks inside the breaks array
+      let completedBreakSeconds = 0;
       breaks.forEach(b => {
-        const start = new Date(b.breakStart).getTime();
-        if (b.breakEnd) {
-          breakMs += (new Date(b.breakEnd).getTime() - start);
-        } else {
-          onBreak = true;
-          currentBreakStart = start;
-        }
+         if (b.breakStart && b.breakEnd) {
+           completedBreakSeconds += Math.floor((new Date(b.breakEnd).getTime() - new Date(b.breakStart).getTime()) / 1000);
+         }
       });
 
-      if (onBreak) {
-        // If currently on break, the elapsed time should be fixed at (breakStart - startTime - previousBreaks)
-        totalMs = currentBreakStart - startTime.getTime();
+      // 2. Handle active break pausing (Bug 1 & 4 Frontend Fix)
+      if (isOnBreak && breakStartTime) {
+        const breakStart = new Date(breakStartTime);
+        // While on break, working time = (breakStart - checkIn) - completedBreaks
+        totalElapsedSeconds = Math.floor((breakStart.getTime() - startTime.getTime()) / 1000);
       }
 
-      const diff = Math.floor((totalMs - breakMs) / 1000);
-      const h = String(Math.floor(diff / 3600)).padStart(2, '0');
-      const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-      const s = String(diff % 60).padStart(2, '0');
+      const netWorkingSeconds = Math.max(0, totalElapsedSeconds - completedBreakSeconds);
+      
+      const h = String(Math.floor(netWorkingSeconds / 3600)).padStart(2, '0');
+      const m = String(Math.floor((netWorkingSeconds % 3600) / 60)).padStart(2, '0');
+      const s = String(netWorkingSeconds % 60).padStart(2, '0');
+      
       setElapsed(`${h}:${m}:${s}`);
     };
 
-    calculate();
-    const id = setInterval(calculate, 1000);
+    calculateSnapshot();
+    const id = setInterval(calculateSnapshot, 1000);
     return () => clearInterval(id);
-  }, [startTime, breaks]);
+  }, [startTime, breaks, isOnBreak, breakStartTime]);
 
   return elapsed;
 };
