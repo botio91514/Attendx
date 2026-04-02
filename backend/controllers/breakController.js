@@ -242,41 +242,9 @@ const getBreakHistory = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Update break policy (Admin)
- * @route   PUT /api/admin/policy/break
- * @access  Private/Admin
- */
-const updateBreakPolicy = async (req, res, next) => {
-  try {
-    const { breakDurationMinutes } = req.body;
-
-    if (!breakDurationMinutes || breakDurationMinutes < 15 || breakDurationMinutes > 120) {
-      return res.status(400).json({
-        success: false,
-        message: 'Break duration must be between 15 and 120 minutes',
-      });
-    }
-
-    const settings = await Settings.getSettings();
-    settings.breakDurationMinutes = breakDurationMinutes;
-    settings.updatedBy = req.user._id;
-    await settings.save();
-
-    res.status(200).json({
-      success: true,
-      data: settings,
-      message: 'Break policy updated successfully. Note: Changes apply to new breaks only.',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   startBreak,
   endBreak,
   getBreakStatus,
-  getBreakHistory,
-  updateBreakPolicy
+  getBreakHistory
 };

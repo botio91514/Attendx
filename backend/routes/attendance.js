@@ -17,8 +17,7 @@ const {
   startBreak: startLunchBreak, 
   endBreak: endLunchBreak, 
   getBreakStatus, 
-  getBreakHistory, 
-  updateBreakPolicy 
+  getBreakHistory
 } = require('../controllers/breakController');
 const { protect } = require('../middleware/authMiddleware');
 const { isAdmin } = require('../middleware/isAdmin');
@@ -98,18 +97,6 @@ router.get('/admin/report', isAdmin, reportValidation, getAttendanceReport);
  */
 router.get('/admin/stats', isAdmin, getTodayStats);
 
-/**
- * @route   GET /api/attendance/admin/breaks
- * @desc    Get all break records
- * @access  Private/Admin
- */
 router.get('/admin/breaks', isAdmin, getBreakHistory);
-
-/**
- * @route   PUT /api/attendance/admin/policy/break
- * @desc    Update break policy
- * @access  Private/Admin
- */
-router.put('/admin/policy/break', isAdmin, updateBreakPolicy);
 
 module.exports = router;

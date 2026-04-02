@@ -14,7 +14,6 @@ const Settings: React.FC = () => {
     officeEndTime: '18:15',
     lateGracePeriod: 0,
     halfDayThreshold: 4,
-    maxBreakLimit: 60,
     breakDurationMinutes: 60,
     workingDays: [1, 2, 3, 4, 5, 6] // default Mon-Sat
   });
@@ -29,7 +28,6 @@ const Settings: React.FC = () => {
           officeEndTime: res.data.officeEndTime,
           lateGracePeriod: res.data.lateGracePeriod,
           halfDayThreshold: res.data.halfDayThreshold,
-          maxBreakLimit: res.data.maxBreakLimit,
           breakDurationMinutes: res.data.breakDurationMinutes || 60,
           workingDays: res.data.workingDays || [1, 2, 3, 4, 5, 6]
         });
@@ -137,59 +135,50 @@ const Settings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Break Limits */}
+              {/* Break Policy */}
               <div className="glass-card p-6 space-y-6">
                 <h3 className="text-lg font-bold flex items-center gap-2 text-foreground">
-                  <Coffee className="w-5 h-5 text-success" /> Break Policy
+                  <Coffee className="w-5 h-5 text-success" /> Daily Break Policy
                 </h3>
                 <div>
-                  <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Daily Break Limit (Min)</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Total Daily Break Allowance (Min)</label>
+                  <div className="flex gap-2 mb-3">
+                    {[30, 45, 60, 90].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setSettings({...settings, breakDurationMinutes: val})}
+                        className={`flex-1 py-1 rounded-md text-[10px] font-bold border transition-all ${
+                          settings.breakDurationMinutes === val 
+                          ? 'bg-success/20 border-success/30 text-success' 
+                          : 'bg-secondary/50 border-glass-border text-muted-foreground'
+                        }`}
+                      >
+                        {val}m
+                      </button>
+                    ))}
+                  </div>
                   <input 
-                    type="number" 
-                    value={settings.maxBreakLimit} 
-                    onChange={e => setSettings({...settings, maxBreakLimit: parseInt(e.target.value) || 0})}
-                    className="input-floating text-success"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Lunch Break Policy (Min)</label>
-                <div className="flex gap-2 mb-3">
-                  {[30, 45, 60, 90].map(val => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setSettings({...settings, breakDurationMinutes: val})}
-                      className={`flex-1 py-1 rounded-md text-[10px] font-bold border transition-all ${
-                        settings.breakDurationMinutes === val 
-                        ? 'bg-success/20 border-success/30 text-success' 
-                        : 'bg-secondary/50 border-glass-border text-muted-foreground'
-                      }`}
-                    >
-                      {val}m
-                    </button>
-                  ))}
+                    type="range"
+                    min="15"
+                    max="180"
+                    step="15"
+                    value={settings.breakDurationMinutes}
+                    onChange={e => setSettings({...settings, breakDurationMinutes: parseInt(e.target.value)})}
+                    className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-success"
+                  />
+                  <div className="flex justify-between mt-1 text-[10px] font-bold text-muted-foreground uppercase">
+                    <span>15m</span>
+                    <span className="text-success font-display tracking-widest">{settings.breakDurationMinutes} Minutes Total</span>
+                    <span>180m</span>
+                  </div>
                 </div>
-                <input 
-                  type="range"
-                  min="15"
-                  max="120"
-                  step="15"
-                  value={settings.breakDurationMinutes}
-                  onChange={e => setSettings({...settings, breakDurationMinutes: parseInt(e.target.value)})}
-                  className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-success"
-                />
-                <div className="flex justify-between mt-1 text-[10px] font-bold text-muted-foreground uppercase">
-                  <span>15m</span>
-                  <span className="text-success font-display tracking-widest">{settings.breakDurationMinutes} Minutes Max</span>
-                  <span>120m</span>
+                <div className="p-3 rounded-lg bg-success/5 border border-success/10">
+                   <p className="text-[10px] text-success leading-relaxed">
+                     Employees can take a <strong>TOTAL of {settings.breakDurationMinutes} minutes</strong> of break across multiple sessions today.
+                     Our automated <strong>BreakMonitor</strong> will alert them if they exceed this limit.
+                   </p>
                 </div>
-              </div>
-              <div className="p-3 rounded-lg bg-success/5 border border-success/10">
-                 <p className="text-[10px] text-success leading-relaxed">
-                   Employees can take up to <strong>{settings.breakDurationMinutes} minutes</strong> for their lunch break each day.
-                   Policy changes apply to new breaks only.
-                 </p>
-              </div>
               </div>
 
               {/* Working Days */}
