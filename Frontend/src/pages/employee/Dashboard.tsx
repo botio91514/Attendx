@@ -190,10 +190,16 @@ const EmployeeDashboard: React.FC = () => {
   const handleBreak = async () => {
     try {
       setActionLoading(true);
-      const endpoint = status === 'break' ? '/attendance/break/end' : '/attendance/break/start';
+      const isCurrentlyOnBreak = status === 'break' || breakStatus?.isOnBreak;
+      const endpoint = isCurrentlyOnBreak ? '/attendance/break/end' : '/attendance/break/start';
+      
       const res = await api.post(endpoint, {});
       if (res.success) {
-        toast.success(status === 'break' ? 'Break ended' : 'Break started');
+        // Optimistically update status to prevent timer drift/visual lag
+        setStatus(isCurrentlyOnBreak ? 'working' : 'break');
+        toast.success(isCurrentlyOnBreak ? 'Break ended' : 'Break started');
+        
+        // Full refresh to sync all data
         fetchDashboardData();
       }
     } catch (error: any) {
@@ -301,7 +307,7 @@ const EmployeeDashboard: React.FC = () => {
         {/* Main Control Panel */}
         <motion.div variants={fadeUp} className="lg:col-span-2 space-y-6">
           {status !== 'idle' && status !== 'completed' && (
-            <BreakTimer />
+            <BreakTimer onStatusChange={fetchDashboardData} />
           )}
           <div className="glass-card p-8 relative overflow-hidden group">
             {/* Dynamic background glow */}

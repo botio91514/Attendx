@@ -17,7 +17,11 @@ interface BreakStatus {
   remainingBreakMinutes: number;
 }
 
-const BreakTimer: React.FC = () => {
+interface BreakTimerProps {
+  onStatusChange?: () => void;
+}
+
+const BreakTimer: React.FC<BreakTimerProps> = ({ onStatusChange }) => {
   const [status, setStatus] = useState<BreakStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -69,6 +73,7 @@ const BreakTimer: React.FC = () => {
       if (res.success) {
         toast.success('Lunch break started');
         fetchStatus();
+        if (onStatusChange) onStatusChange();
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to start break');
@@ -84,6 +89,7 @@ const BreakTimer: React.FC = () => {
       if (res.success) {
         toast.success('Lunch break ended');
         fetchStatus();
+        if (onStatusChange) onStatusChange();
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to end break');
