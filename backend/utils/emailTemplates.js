@@ -132,8 +132,14 @@ const statusBadge = (text, color) => `
 
 // Helper for live links
 const getLiveUrl = (path = '') => {
-  const base = (process.env.CLIENT_URL || 'https://gatistwamhrms.netlify.app').split(',')[0].trim();
-  return `${base}${path}`;
+  let base = (process.env.CLIENT_URL || 'https://gatistwamhrms.netlify.app').split(',')[0].trim();
+  // Remove trailing slash from base if it exists
+  if (base.endsWith('/')) {
+    base = base.slice(0, -1);
+  }
+  // Ensure path starts with a slash
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
 };
 
 // ─────────────────────────────────────────────
