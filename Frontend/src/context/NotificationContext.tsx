@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface Notification {
   _id: string;
-  type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'check_in' | 'announcement';
+  type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'check_in' | 'announcement' | 'break_alert';
   title: string;
   message: string;
   link: string;
@@ -31,18 +31,24 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
+  const notificationsRef = useRef<Notification[]>([]);
+
+  // Keep ref in sync for silent comparison in callbacks
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   const fetchNotifications = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       const res = await api.get('/notifications');
       if (res.success) {
-        const newNotifications = res.data;
+        const newNotifications = res.data as Notification[];
         
         // 🚀 Detect New Notifications only if silent tracking is on
-        if (silent && notifications.length > 0) {
-           const newUnread = (newNotifications as Notification[]).filter(
-             newN => !newN.isRead && !notifications.some(oldN => oldN._id === newN._id)
+        if (silent && notificationsRef.current.length > 0) {
+           const newUnread = newNotifications.filter(
+             newN => !newN.isRead && !notificationsRef.current.some(oldN => oldN._id === newN._id)
            );
            
            if (newUnread.length > 0) {
@@ -65,7 +71,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [notifications]);
+  }, []); // Dependencies removed to prevent re-creation loops
 
   const markAsRead = async (id: string) => {
     try {
@@ -92,7 +98,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const markByType = async (type: string | string[]) => {
     try {
       const types = Array.isArray(type) ? type : [type];
-      const targetIds = notifications
+      const targetIds = notificationsRef.current
         .filter(n => !n.isRead && types.includes(n.type))
         .map(n => n._id);
       
@@ -109,17 +115,16 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   useEffect(() => {
-    // Only fetch notifications if user is authenticated (token exists)
-    // This prevents the 401 Unauthorized errors on app startup
     const token = localStorage.getItem('attendx_token');
     if (!token) return;
 
+    // Initial load
     fetchNotifications();
+
     const interval = setInterval(() => {
-      // Re-check token on each poll in case user has logged out
       const currentToken = localStorage.getItem('attendx_token');
       if (currentToken) fetchNotifications(true);
-    }, 5000); // Poll every 5s for near real-time feel
+    }, 10000); // Polling every 10s is sufficient and less heavy
 
     return () => clearInterval(interval);
   }, [fetchNotifications]);
