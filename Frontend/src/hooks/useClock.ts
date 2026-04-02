@@ -24,22 +24,27 @@ export const useElapsedTime = (startTime: Date | null, breaks: any[] = [], isOnB
 
     const calculateSnapshot = () => {
       const now = new Date();
+      
+      // Calculate raw elapsed since check-in
       let totalElapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
 
-      // 1. Calculate total duration of all COMPLETED breaks inside the breaks array
+      // Handle active break pausing (Fix: freeze the timer completely)
+      if (isOnBreak) {
+        // Use provided start time, or fallback to current 'now' (freeze point)
+        const freezeDate = breakStartTime ? new Date(breakStartTime) : now;
+        totalElapsedSeconds = Math.floor((freezeDate.getTime() - startTime.getTime()) / 1000);
+      }
+
+      // Calculate total duration of all COMPLETED breaks inside the breaks array
       let completedBreakSeconds = 0;
       breaks.forEach(b => {
-         if (b.breakStart && b.breakEnd) {
+         // Handle both old array format and simple total minutes if passed
+         if (typeof b === 'number') {
+           completedBreakSeconds += (b * 60);
+         } else if (b.breakStart && b.breakEnd) {
            completedBreakSeconds += Math.floor((new Date(b.breakEnd).getTime() - new Date(b.breakStart).getTime()) / 1000);
          }
       });
-
-      // 2. Handle active break pausing (Bug 1 & 4 Frontend Fix)
-      if (isOnBreak && breakStartTime) {
-        const breakStart = new Date(breakStartTime);
-        // While on break, working time = (breakStart - checkIn) - completedBreaks
-        totalElapsedSeconds = Math.floor((breakStart.getTime() - startTime.getTime()) / 1000);
-      }
 
       const netWorkingSeconds = Math.max(0, totalElapsedSeconds - completedBreakSeconds);
       

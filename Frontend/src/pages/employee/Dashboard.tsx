@@ -41,14 +41,15 @@ const EmployeeDashboard: React.FC = () => {
     holiday: null as string | null
   });
   const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
+  const [totalBreakMinutes, setTotalBreakMinutes] = useState(0);
 
   const [officeSettings, setOfficeSettings] = useState<any>(null);
 
   const [breakStatus, setBreakStatus] = useState<any>(null);
   const elapsed = useElapsedTime(
     checkInTime, 
-    todayBreaks, 
-    breakStatus?.isOnBreak, 
+    [totalBreakMinutes], 
+    breakStatus?.isOnBreak || status === 'break',
     breakStatus?.breakStartTime
   );
 
@@ -141,6 +142,11 @@ const EmployeeDashboard: React.FC = () => {
           ...prev,
           daysPresent: presenceCount.toString()
         }));
+      }
+      
+      // Update cumulative break minutes for the timer (new system)
+      if (todayRes.success && todayRes.data?.attendance) {
+        setTotalBreakMinutes(todayRes.data.attendance.totalBreakTime || 0);
       }
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
