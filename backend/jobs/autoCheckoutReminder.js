@@ -65,16 +65,15 @@ const isOnLeave = async (userId, todayStr) => {
 
 
 // ═════════════════════════════════════════════
-// JOB 1: CHECKOUT REMINDER (8:30 PM IST)
-//   - Runs at 15:00 UTC = 8:30 PM IST
+// JOB 1: CHECKOUT REMINDER (6:20 PM IST)
+//   - Runs at 12:50 UTC = 6:20 PM IST
 //   - Finds employees who checked IN but did NOT check OUT
-//   - Sends a reminder email with their check-in time
 // ═════════════════════════════════════════════
 const startCheckoutReminderJob = () => {
-  // 00 15 * * * = 15:00 UTC = 8:30 PM IST
-  cron.schedule('00 15 * * *', async () => {
+  // 50 12 * * * = 12:50 UTC = 6:20 PM IST
+  cron.schedule('50 12 * * *', async () => {
     try {
-      console.log('⏰ [CRON] Checkout Reminder Job started (8:30 PM IST)...');
+      console.log('⏰ [CRON] Checkout Reminder Job started (6:20 PM IST)...');
 
       const settings = await Settings.getSettings();
       const todayStr  = getTodayIST();
@@ -83,7 +82,7 @@ const startCheckoutReminderJob = () => {
 
       // Skip if today is not a working day
       if (!isTodayWorkingDay(settings.workingDays)) {
-        console.log('📅 [CRON] Today is not a working day. Skipping checkout reminder.');
+        console.log(`📅 [CRON] ${todayStr} is not a working day. Skipping reminder.`);
         return;
       }
 
@@ -97,19 +96,31 @@ const startCheckoutReminderJob = () => {
         ]
       }).populate('userId', 'name email role isActive');
 
-      if (pendingRecords.length === 0) {
-        console.log('✅ [CRON] All employees have checked out. Nothing to do.');
-        return;
-      }
-
-      console.log(`🔍 [CRON] ${pendingRecords.length} employee(s) have not checked out. Sending reminders...`);
+      console.log(`🔍 [CRON] Found ${pendingRecords.length} records without checkout for today.`);
 
       const results = await Promise.allSettled(
         pendingRecords.map(async (record) => {
           const emp = record.userId;
 
-          // Guard: skip invalid/admin/inactive users
-          if (!emp || !emp.isActive || emp.role === 'admin' || !emp.email) return;
+          if (!emp) {
+            console.log('⚠️ [CRON] Record missing userId logic.');
+            return;
+          }
+          
+          if (!emp.isActive) {
+            console.log(`⏭️ [CRON] Skipping inactive user: ${emp.name}`);
+            return;
+          }
+          
+          if (emp.role === 'admin') {
+            console.log(`⏭️ [CRON] Skipping admin: ${emp.name}`);
+            return;
+          }
+          
+          if (!emp.email) {
+            console.log(`⚠️ [CRON] Skipping user without email: ${emp.name}`);
+            return;
+          }
 
           // Skip employees on approved leave
           if (await isOnLeave(emp._id, todayStr)) {
@@ -131,20 +142,18 @@ const startCheckoutReminderJob = () => {
             html
           });
 
-          console.log(`📧 [CRON] Checkout reminder sent → ${emp.name} <${emp.email}>`);
+          console.log(`📧 [CRON] Reminder sent → ${emp.name}`);
         })
       );
 
-      const sent   = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
-      console.log(`✅ [CRON] Checkout reminders done. Sent: ${sent}, Failed: ${failed}`);
+      console.log(`✅ [CRON] Reminder job done. Success: ${results.filter(r => r.status === 'fulfilled').length}`);
 
     } catch (error) {
       console.error('❌ [CRON] Error in Checkout Reminder Job:', error);
     }
   });
 
-  console.log('🚀 [CRON] Checkout Reminder Job registered (runs daily at 8:30 PM IST).');
+  console.log('🚀 [CRON] Checkout Reminder Job registered (runs daily at 6:20 PM IST).');
 };
 
 
@@ -310,17 +319,15 @@ const runAbsentAlertCheck = async (settings, deadlineStr) => {
 
 
 // ═════════════════════════════════════════════
-// JOB 3: AUTO-CHECKOUT (9:00 PM IST)
-//   - Runs at 15:30 UTC = 9:00 PM IST
+// JOB 3: AUTO-CHECKOUT (6:30 PM IST)
+//   - Runs at 13:00 UTC = 6:30 PM IST
 //   - Automatically checks out anyone still checked in
-//   - Sets checkout time to officeEndTime from settings
-//   - This ensures attendance records are complete for payroll
 // ═════════════════════════════════════════════
 const startAutoCheckoutJob = () => {
-  // 30 15 * * * = 15:30 UTC = 9:00 PM IST
-  cron.schedule('30 15 * * *', async () => {
+  // 00 13 * * * = 13:00 UTC = 6:30 PM IST
+  cron.schedule('00 13 * * *', async () => {
     try {
-      console.log('⏰ [CRON] Auto-Checkout Job started (9:00 PM IST)...');
+      console.log('⏰ [CRON] Auto-Checkout Job started (6:30 PM IST)...');
 
       const settings = await Settings.getSettings();
       const todayStr = getTodayIST();
@@ -356,7 +363,7 @@ const startAutoCheckoutJob = () => {
 
           // Update record
           record.checkOut = checkoutDate;
-          record.notes = (record.notes ? record.notes + ' ' : '') + '[Auto-Checkout by System at 9 PM]';
+          record.notes = (record.notes ? record.notes + ' ' : '') + '[Auto-Checkout by System at 6:30 PM]';
           
           record._settings = settings; 
           await record.save();
@@ -369,7 +376,7 @@ const startAutoCheckoutJob = () => {
     }
   });
 
-  console.log('🚀 [CRON] Auto-Checkout Job registered (runs daily at 9:00 PM IST).');
+  console.log('🚀 [CRON] Auto-Checkout Job registered (runs daily at 6:30 PM IST).');
 };
 
 
