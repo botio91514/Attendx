@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Coffee, Play, Square, Loader2, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -26,18 +26,26 @@ const BreakTimer: React.FC<BreakTimerProps> = ({ onStatusChange }) => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0); // in seconds
+  const breakStartTimeRef = useRef<string | null>(null);
+
+  // Helper: calculate elapsed seconds from a start time string
+  const calcElapsed = (startTimeStr: string) => {
+    const start = new Date(startTimeStr).getTime();
+    const now = Date.now();
+    return Math.max(0, Math.floor((now - start) / 1000));
+  };
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await api.get('/attendance/break/status');
       if (res.success) {
         setStatus(res.data);
-        
-        // If already on break, calculate initial elapsed time
         if (res.data.isOnBreak && res.data.breakStartTime) {
-          const start = new Date(res.data.breakStartTime).getTime();
-          const now = new Date().getTime();
-          setElapsed(Math.max(0, Math.floor((now - start) / 1000)));
+          breakStartTimeRef.current = res.data.breakStartTime;
+          setElapsed(calcElapsed(res.data.breakStartTime));
+        } else {
+          breakStartTimeRef.current = null;
+          setElapsed(0);
         }
       }
     } catch (error) {
@@ -49,18 +57,31 @@ const BreakTimer: React.FC<BreakTimerProps> = ({ onStatusChange }) => {
 
   useEffect(() => {
     fetchStatus();
-    
-    // Poll every 30 seconds for sync
-    const pollId = setInterval(fetchStatus, 30000);
+    // Poll every 60 seconds for server sync
+    const pollId = setInterval(fetchStatus, 60000);
     return () => clearInterval(pollId);
   }, [fetchStatus]);
 
-  // Timer Effect
+  // ✅ FIX: Re-sync timer when user returns to the tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && breakStartTimeRef.current) {
+        // Instantly correct the elapsed time from the actual start time
+        setElapsed(calcElapsed(breakStartTimeRef.current));
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Timer Effect: calculate from startTime directly to prevent drift
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (status?.isOnBreak) {
+    if (status?.isOnBreak && breakStartTimeRef.current) {
       interval = setInterval(() => {
-        setElapsed(prev => prev + 1);
+        if (breakStartTimeRef.current) {
+          setElapsed(calcElapsed(breakStartTimeRef.current));
+        }
       }, 1000);
     }
     return () => clearInterval(interval);
