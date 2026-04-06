@@ -66,12 +66,11 @@ const isOnLeave = async (userId, todayStr) => {
 
 // ═════════════════════════════════════════════
 // JOB 1: CHECKOUT REMINDER (6:20 PM IST)
-//   - Runs at 12:50 UTC = 6:20 PM IST
 //   - Finds employees who checked IN but did NOT check OUT
 // ═════════════════════════════════════════════
 const startCheckoutReminderJob = () => {
-  // 50 12 * * * = 12:50 UTC = 6:20 PM IST
-  cron.schedule('50 12 * * *', async () => {
+  // 20 18 * * * = 6:20 PM IST
+  cron.schedule('20 18 * * *', async () => {
     try {
       console.log('⏰ [CRON] Checkout Reminder Job started (6:20 PM IST)...');
 
@@ -151,6 +150,9 @@ const startCheckoutReminderJob = () => {
     } catch (error) {
       console.error('❌ [CRON] Error in Checkout Reminder Job:', error);
     }
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
   });
 
   console.log('🚀 [CRON] Checkout Reminder Job registered (runs daily at 6:20 PM IST).');
@@ -164,7 +166,7 @@ const startAbsentAlertJob = async () => {
   /**
    * We calculate the exact IST time (officeStart + gracePeriod + 5 min buffer)
    * and schedule a ONE-TIME check for that time every day.
-   * We use a daily cron at 00:01 AM IST to re-schedule the job for that day.
+   * We use a daily cron at 12:01 AM IST to re-schedule the job for that day.
    */
 
   let scheduledAbsentJob = null;
@@ -184,18 +186,7 @@ const startAbsentAlertJob = async () => {
         deadlineMin   = deadlineMin % 60;
       }
 
-      let utcHour = deadlineHour - 5;
-      let utcMin  = deadlineMin - 30;
-
-      if (utcMin < 0) {
-        utcMin  += 60;
-        utcHour -= 1;
-      }
-      if (utcHour < 0) {
-        utcHour += 24;
-      }
-
-      const cronExpr    = `${utcMin} ${utcHour} * * *`;
+      const cronExpr    = `${deadlineMin} ${deadlineHour} * * *`;
       const deadlineStr = `${String(deadlineHour).padStart(2, '0')}:${String(deadlineMin).padStart(2, '0')}`;
 
       console.log(`📅 [CRON] Absent Alert scheduled at ${deadlineStr} IST (cron: ${cronExpr})`);
@@ -207,6 +198,9 @@ const startAbsentAlertJob = async () => {
 
       scheduledAbsentJob = cron.schedule(cronExpr, async () => {
         await runAbsentAlertCheck(settings, deadlineStr);
+      }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata"
       });
 
     } catch (err) {
@@ -239,9 +233,12 @@ const startAbsentAlertJob = async () => {
   };
 
   // Run the scheduler daily at 12:01 AM IST to pick up new settings
-  cron.schedule('31 18 * * *', async () => {
+  cron.schedule('01 00 * * *', async () => {
     console.log('🔄 [CRON] Recalculating Absent Alert schedule for tomorrow...');
     await scheduleAbsentCheck();
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
   });
 
   // Initialize today's schedule and check if we missed it
@@ -320,12 +317,11 @@ const runAbsentAlertCheck = async (settings, deadlineStr) => {
 
 // ═════════════════════════════════════════════
 // JOB 3: AUTO-CHECKOUT (6:30 PM IST)
-//   - Runs at 13:00 UTC = 6:30 PM IST
 //   - Automatically checks out anyone still checked in
 // ═════════════════════════════════════════════
 const startAutoCheckoutJob = () => {
-  // 00 13 * * * = 13:00 UTC = 6:30 PM IST
-  cron.schedule('00 13 * * *', async () => {
+  // 30 18 * * * = 6:30 PM IST
+  cron.schedule('30 18 * * *', async () => {
     try {
       console.log('⏰ [CRON] Auto-Checkout Job started (6:30 PM IST)...');
 
@@ -374,6 +370,9 @@ const startAutoCheckoutJob = () => {
     } catch (error) {
       console.error('❌ [CRON] Error in Auto-Checkout Job:', error);
     }
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
   });
 
   console.log('🚀 [CRON] Auto-Checkout Job registered (runs daily at 6:30 PM IST).');
