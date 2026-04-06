@@ -150,6 +150,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [fetchNotifications]);
 
   const markAsRead = async (id: string) => {
+    if (id.startsWith('temp_')) return;
     const previousNotifications = [...notificationsRef.current];
     try {
       // Optimistic update
@@ -186,7 +187,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       const types = Array.isArray(type) ? type : [type];
       const targetIds = notificationsRef.current
-        .filter(n => !n.isRead && types.includes(n.type))
+        .filter(n => 
+          !n.isRead && 
+          types.includes(n.type) &&
+          !n._id.startsWith('temp_')
+        )
         .map(n => n._id);
       
       if (targetIds.length === 0) return;
@@ -289,7 +294,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // This replaces temp notification with real MongoDB ID
       setTimeout(() => {
         fetchRef.current(true);
-      }, 1000);
+      }, 2000);
     });
 
     // Leave status changed
