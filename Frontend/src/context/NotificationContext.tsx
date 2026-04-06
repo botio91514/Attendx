@@ -39,10 +39,24 @@ interface ApiResponse {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('attendx_notifications');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+
+  useEffect(() => {
+    try {
+      const toCache = notifications.slice(0, 50);
+      sessionStorage.setItem('attendx_notifications', JSON.stringify(toCache));
+    } catch {}
+  }, [notifications]);
   
   const notificationsRef = useRef<Notification[]>([]);
   const isFetchingRef = useRef(false);
@@ -106,7 +120,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           }
         }
         
-        setNotifications(newNotifications);
+        if (newNotifications.length > 0) {
+          setNotifications(newNotifications);
+        } else if (newNotifications.length === 0 && notificationsRef.current.length === 0) {
+          setNotifications([]);
+        }
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -193,28 +211,44 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // --- SOCKET CONNECTION EFFECT ---
   useEffect(() => {
-    const token = localStorage.getItem('attendx_token');
-    if (!token) return;
+    let connectionTimeout: NodeJS.Timeout;
+    let socket: any;
 
-    // Connect socket
-    const socket = connectSocket(token);
+    const tryConnect = () => {
+      const token = localStorage.getItem('attendx_token');
+      
+      if (!token) {
+        connectionTimeout = setTimeout(tryConnect, 500);
+        return;
+      }
 
-    // Connection events
-    socket.on('connect', () => {
-      setIsSocketConnected(true);
-      console.log('Socket connected');
-    });
+      socket = connectSocket(token);
 
-    socket.on('disconnect', () => {
-      setIsSocketConnected(false);
-      console.log('Socket disconnected — polling active');
-    });
+      socket.on('connect', () => {
+        setIsSocketConnected(true);
+        console.log('Socket connected ✅');
+        
+        fetchRef.current(true);
 
-    socket.on('connect_error', (err) => {
-      console.error('Socket connection failed:', err.message);
-      setIsSocketConnected(false);
-      // Polling continues as fallback — no action needed
-    });
+        let fastPollCount = 0;
+        const fastPoll = setInterval(() => {
+          fetchRef.current(true);
+          fastPollCount++;
+          if (fastPollCount >= 3) {
+            clearInterval(fastPoll);
+          }
+        }, 30000);
+      });
+
+      socket.on('disconnect', (reason: string) => {
+        setIsSocketConnected(false);
+        console.log('Socket disconnected:', reason);
+      });
+
+      socket.on('connect_error', (err: Error) => {
+        console.error('Socket connection failed:', err.message);
+        setIsSocketConnected(false);
+      });
 
     // === NOTIFICATION EVENTS ===
 
@@ -279,14 +313,23 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       });
     });
+    };
+
+    tryConnect();
 
     // Cleanup on unmount
     return () => {
-      socket.off('notification:new');
-      socket.off('leave:statusChanged');
-      socket.off('notice:broadcast');
-      socket.off('break:exceeded');
-      disconnectSocket();
+      clearTimeout(connectionTimeout);
+      if (socket) {
+        socket.off('connect');
+        socket.off('disconnect');
+        socket.off('connect_error');
+        socket.off('notification:new');
+        socket.off('leave:statusChanged');
+        socket.off('notice:broadcast');
+        socket.off('break:exceeded');
+        disconnectSocket();
+      }
     };
   }, []); // runs once on mount
 

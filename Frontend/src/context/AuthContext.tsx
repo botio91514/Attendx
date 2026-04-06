@@ -140,6 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null);
     localStorage.removeItem('attendx_user');
     localStorage.removeItem('attendx_token');
+    sessionStorage.removeItem('attendx_notifications');
     window.location.href = '/login';
   }, []);
 

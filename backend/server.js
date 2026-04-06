@@ -88,6 +88,15 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health check endpoint (used by keep-alive)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 /**
  * Error Handling
  */
@@ -117,17 +126,22 @@ const server = httpServer.listen(PORT, () => {
   console.log('Socket.io initialized');
 
   // 🏆 Render Anti-Sleep Integration
-  // Use a self-ping every 14 minutes to keep the free instance alive
-  const SELF_URL = process.env.SELF_URL;
-  if (SELF_URL) {
-    const https = require('https');
-    setInterval(() => {
-      https.get(SELF_URL, (res) => {
-        console.log(`Internal Keep-Alive Ping: ${res.statusCode}`);
-      }).on('error', (e) => {
-        console.error(`Keep-Alive Error: ${e.message}`);
-      });
-    }, 840000); // 14 Minutes
+  if (process.env.NODE_ENV === 'production') {
+    const RENDER_URL = process.env.RENDER_EXTERNAL_URL ||
+      process.env.CLIENT_URL?.replace('netlify.app', 'onrender.com');
+    
+    if (RENDER_URL) {
+      setInterval(async () => {
+        try {
+          const https = require('https');
+          https.get(`${RENDER_URL}/api/health`, (res) => {
+             console.log(`Keep-alive ping sent: ${res.statusCode}`);
+          });
+        } catch (err) {
+          console.error('Keep-alive failed:', err.message);
+        }
+      }, 14 * 60 * 1000); // every 14 minutes
+    }
   }
 });
 
