@@ -48,8 +48,8 @@ const RootRedirect = () => {
 };
 // --- END ROOT REDIRECT ---
 
-const App = () => (
-  <AuthProvider>
+const AppWithAuth = () => {
+  return (
     <NotificationProvider>
       <TooltipProvider>
         <Sonner position="top-right" closeButton richColors />
@@ -89,6 +89,12 @@ const App = () => (
         </BrowserRouter>
       </TooltipProvider>
     </NotificationProvider>
+  );
+};
+
+const App = () => (
+  <AuthProvider>
+    <AppWithAuth />
   </AuthProvider>
 );
 
