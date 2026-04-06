@@ -10,8 +10,11 @@ export const connectSocket = (token: string): Socket => {
     socket = null;
   }
 
-  socket = io(import.meta.env.VITE_API_URL || 
-    'http://localhost:5000', {
+  const SOCKET_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
+    .replace('/api', '')
+    .replace(/\/$/, '');
+
+  socket = io(SOCKET_URL, {
     auth: { token },  // sent to server auth middleware
     reconnection: true,
     reconnectionAttempts: Infinity,
