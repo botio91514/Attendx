@@ -444,21 +444,24 @@ const getAttendanceHistory = async (req, res, next) => {
       });
 
       leaves.forEach(leave => {
-        let current = new Date(Math.max(leave.startDate, startD));
-        const leaveEnd = new Date(Math.min(leave.endDate, endD));
+        let current = new Date(Math.max(new Date(leave.startDate), startD));
+        const leaveEnd = new Date(Math.min(new Date(leave.endDate), endD));
 
         while (current <= leaveEnd) {
-          const dateStr = current.toISOString().split('T')[0];
-          const hasAttendance = finalAttendance.some(a => a.date.startsWith(dateStr));
-          
-          if (!hasAttendance) {
-            finalAttendance.push({
-              userId,
-              date: dateStr,
-              status: 'leave',
-              leaveType: leave.type,
-              isVirtual: true
-            });
+          // 🛠️ Skip Sundays from leave counting (User Rule)
+          if (current.getDay() !== 0) {
+            const dateStr = current.toISOString().split('T')[0];
+            const hasAttendance = finalAttendance.some(a => a.date.startsWith(dateStr));
+            
+            if (!hasAttendance) {
+              finalAttendance.push({
+                userId,
+                date: dateStr,
+                status: 'leave',
+                leaveType: leave.type,
+                isVirtual: true
+              });
+            }
           }
           current.setDate(current.getDate() + 1);
         }
@@ -485,6 +488,28 @@ const getAttendanceHistory = async (req, res, next) => {
           });
         }
       });
+    }
+
+    // 4. 🚀 Auto-Inject Sundays as Holidays (New Feature)
+    if (startD && endD) {
+      let current = new Date(startD);
+      while (current <= endD) {
+        if (current.getDay() === 0) { // Sunday
+          const dateStr = current.toISOString().split('T')[0];
+          const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
+          
+          if (!hasRecord) {
+            finalAttendance.push({
+              userId,
+              date: dateStr,
+              status: 'holiday',
+              title: 'Sunday',
+              isVirtual: true
+            });
+          }
+        }
+        current.setDate(current.getDate() + 1);
+      }
     }
 
     // Sort by date descending for history view

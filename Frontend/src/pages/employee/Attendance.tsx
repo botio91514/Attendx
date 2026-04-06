@@ -85,22 +85,35 @@ const AttendancePage: React.FC = () => {
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
+    const lastMonthDays = new Date(year, month, 0).getDate();
 
     const days = [];
-    for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="p-2 md:p-4 rounded-xl opacity-0"></div>);
+    
+    // Previous Month Days (Padding) — Show 30th/31st etc.
+    for (let i = firstDay - 1; i >= 0; i--) {
+      const pmDay = lastMonthDays - i;
+      days.push(
+        <div key={`prev-${pmDay}`} className="min-h-[100px] sm:min-h-[120px] p-2 md:p-3 relative rounded-2xl border border-glass-border/10 bg-secondary/5 opacity-30">
+          <span className="absolute top-2 left-3 text-xs font-bold text-muted-foreground/30">{pmDay}</span>
+        </div>
+      );
     }
 
+    // Current Month Days
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const record = attendance.find(a => a.date.split('T')[0] === dateStr);
+      const record = attendance.find(a => a.date.startsWith(dateStr));
       const isToday = new Date().toISOString().split('T')[0] === dateStr;
       const isSunday = new Date(year, month, d).getDay() === 0;
 
       let bgClass = "bg-secondary/10 border-glass-border/30";
       let IconNode = null;
 
-      if (record) {
+      // Primary Logic: If Sunday and no manual attendance, it's a Holiday
+      if (isSunday && (!record || record.status === 'holiday')) {
+        bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]";
+        IconNode = <span className="absolute inset-0 m-auto flex items-center justify-center opacity-20 pointer-events-none text-4xl">⭐</span>;
+      } else if (record) {
         if (record.status === 'present') { 
           bgClass = "bg-success/10 border-success/30 shadow-[inset_0_0_20px_rgba(var(--success),0.05)]"; 
           IconNode = <CheckCircle2 className="w-8 h-8 text-success/20 absolute inset-0 m-auto pointer-events-none" />; 
@@ -121,30 +134,24 @@ const AttendancePage: React.FC = () => {
           bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]";
           IconNode = <span className="absolute inset-0 m-auto flex items-center justify-center opacity-20 pointer-events-none text-4xl">⭐</span>;
         }
-      } else if (isSunday) {
-        bgClass = "bg-secondary/5 border-dashed border-muted-foreground/20";
       }
 
       days.push(
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: d * 0.01 }} key={d} className={`min-h-[100px] sm:min-h-[120px] p-2 md:p-3 relative transition-all duration-300 rounded-2xl border group hover:scale-[1.03] hover:z-20 hover:shadow-2xl ${bgClass} ${isToday ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-          <span className={`absolute top-2 left-3 text-xs md:text-sm font-bold z-10 ${isToday ? 'text-primary' : isSunday && !record ? 'text-muted-foreground/40' : 'text-foreground/70'}`}>{d}</span>
+          <span className={`absolute top-2 left-3 text-xs md:text-sm font-bold z-10 ${isToday ? 'text-primary' : isSunday ? 'text-indigo-400' : 'text-foreground/70'}`}>{d}</span>
 
           {IconNode}
 
-          {record ? (
+          {record || isSunday ? (
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5 z-10 w-fit">
-              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${record.status === 'present' ? 'bg-success/20 text-success' : record.status === 'absent' ? 'bg-destructive/20 text-destructive' : record.status === 'late' ? 'bg-warning/20 text-warning' : record.status === 'leave' ? 'bg-primary/40 text-primary-foreground shadow-sm' : 'bg-indigo-500/40 text-white'}`}>
-                {record.status === 'holiday' ? record.title || 'Holiday' : record.status}
+              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${isSunday && (!record || record.status === 'holiday') ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : record?.status === 'leave' ? 'bg-primary/40 text-primary-foreground shadow-sm' : 'bg-indigo-500/40 text-white'}`}>
+                {isSunday && (!record || record.status === 'holiday') ? 'Sunday' : record?.status === 'holiday' ? record.title || 'Holiday' : record?.status}
               </span>
-              {record.checkIn && (
+              {record?.checkIn && (
                 <span className="text-[9px] font-mono font-medium text-foreground hidden sm:block mt-1 pl-1">
                   In: {new Date(record.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-            </div>
-          ) : isSunday ? (
-            <div className="absolute bottom-2 left-3 z-10">
-              <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">Sunday</span>
             </div>
           ) : null}
         </motion.div>
