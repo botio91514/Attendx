@@ -16,6 +16,7 @@ const {
   leaveApprovedTemplate, 
   leaveRejectedTemplate 
 } = require('../utils/emailTemplates');
+const { emitToAdmins, emitToUser } = require('../socket/socketManager.js');
 
 /**
  * @desc    Apply for leave
@@ -162,6 +163,20 @@ const applyLeave = async (req, res, next) => {
       referenceId: leave._id
     }));
     await Notification.insertMany(notifications);
+
+    // Socket emit — notify admins of new leave request
+    try {
+      console.log('[LEAVE] Emitting leave request to admins');
+      emitToAdmins('notification:new', {
+        type: 'leave_request',
+        title: '📋 New Leave Request',
+        message: `${req.user.name} has applied for ${leaveType} leave (${leave.totalDays} days).`,
+        link: '/admin/leaves'
+      });
+      console.log('[LEAVE] Emit successful');
+    } catch (err) {
+      console.error('[LEAVE] Emit failed:', err.message);
+    }
   } catch (error) {
     next(error);
   }
@@ -463,6 +478,22 @@ const approveLeave = async (req, res, next) => {
       link: '/leaves',
       targetRole: 'employee'
     });
+
+    try {
+      console.log('[LEAVE] Emitting approval to employee:', leave.userId._id.toString());
+      emitToUser(leave.userId._id.toString(), 'notification:new', {
+        type: 'leave_approved',
+        title: '✅ Leave Approved',
+        message: `Your ${leave.leaveType} leave has been approved.`,
+        link: '/leaves'
+      });
+      emitToUser(leave.userId._id.toString(), 'leave:statusChanged', {
+        leaveId: leave._id,
+        status: 'approved'
+      });
+    } catch (err) {
+      console.error('[LEAVE] Approval emit failed:', err.message);
+    }
   } catch (error) {
     next(error);
   }
@@ -560,6 +591,21 @@ const rejectLeave = async (req, res, next) => {
       link: '/leaves',
       targetRole: 'employee'
     });
+
+    try {
+      emitToUser(leave.userId._id.toString(), 'notification:new', {
+        type: 'leave_rejected',
+        title: '❌ Leave Not Approved',
+        message: `Your ${leave.leaveType} leave was not approved.`,
+        link: '/leaves'
+      });
+      emitToUser(leave.userId._id.toString(), 'leave:statusChanged', {
+        leaveId: leave._id,
+        status: 'rejected'
+      });
+    } catch (err) {
+      console.error('[LEAVE] Rejection emit failed:', err.message);
+    }
   } catch (error) {
     next(error);
   }

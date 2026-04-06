@@ -12,9 +12,13 @@ const initializeSocket = (httpServer) => {
       methods: ['GET', 'POST'],
       credentials: true  // needed for HTTP-only cookies
     },
-    // Reconnection settings
+    // Reconnection & stability settings
     pingTimeout: 60000,
     pingInterval: 25000,
+    upgradeTimeout: 30000,
+    allowUpgrades: true,
+    cookie: false,
+    transports: ['websocket'],
   });
 
   // ===  AUTHENTICATION MIDDLEWARE ===
@@ -104,25 +108,26 @@ const getIO = () => {
 // Send to ONE specific user
 const emitToUser = (userId, event, data) => {
   try {
+    console.log(`[SOCKET] Emitting to user ${userId}: ${event}`);
     getIO().to(userId.toString()).emit(event, {
       ...data,
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    console.error('Socket emit to user failed:', err);
-    // Never crash server on socket failure
+    console.error('[SOCKET] emitToUser failed:', err.message);
   }
 };
 
 // Send to ALL admins
 const emitToAdmins = (event, data) => {
   try {
+    console.log(`[SOCKET] Emitting to admins: ${event}`, data);
     getIO().to('admins').emit(event, {
       ...data,
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    console.error('Socket emit to admins failed:', err);
+    console.error('[SOCKET] emitToAdmins failed:', err.message);
   }
 };
 

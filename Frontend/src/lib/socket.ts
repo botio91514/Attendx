@@ -21,7 +21,7 @@ export const connectSocket = (token: string): Socket => {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 10000,
     timeout: 20000,
-    transports: ['websocket', 'polling']
+    transports: ['websocket']
   });
 
   return socket;
