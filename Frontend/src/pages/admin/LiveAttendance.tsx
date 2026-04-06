@@ -4,6 +4,7 @@ import { Download, RefreshCw, Search, Loader2 } from 'lucide-react';
 import { useClock } from '@/hooks/useClock';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { getSocket } from '@/lib/socket';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -32,6 +33,56 @@ const LiveAttendance: React.FC = () => {
   useEffect(() => {
     fetchLiveAttendance();
   }, [selectedDate]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Listen for check-in events
+    socket.on('attendance:checkin', (data) => {
+      // Update the live employee list immediately
+      setRecords(prev => {
+        const existing = prev.find(
+          e => e.userId?._id === data.userId || e.userId === data.userId
+        );
+        if (existing) {
+          return prev.map(e => 
+            (e.userId?._id === data.userId || e.userId === data.userId)
+              ? { ...e, status: data.status, checkIn: data.checkInTime }
+              : e
+          );
+        }
+        return [{
+          userId: { _id: data.userId, name: data.employeeName, employeeId: data.employeeId, department: data.department },
+          status: data.status,
+          checkIn: data.checkInTime
+        }, ...prev];
+      });
+      
+      // Show admin toast
+      toast(`${data.employeeName} checked in`, {
+        description: data.status === 'late' ? '⚠️ Marked as Late' : '✅ On Time',
+        icon: data.status === 'late' ? '⚠️' : '✅'
+      });
+    });
+
+    // Listen for check-out events
+    socket.on('attendance:checkout', (data) => {
+      setRecords(prev => 
+        prev.map(e => 
+          (e.userId?._id === data.userId || e.userId === data.userId)
+            ? { ...e, status: 'checked-out', checkOut: data.checkOutTime }
+            : e
+        )
+      );
+    });
+
+    // Cleanup
+    return () => {
+      socket.off('attendance:checkin');
+      socket.off('attendance:checkout');
+    };
+  }, []);
 
   const filtered = records.filter(r =>
     (dept === 'All' || r.userId?.department === dept) &&

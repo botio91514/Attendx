@@ -76,6 +76,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/profile', require('./routes/profileRoutes')); // Added for Profile Management
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/payroll', require('./routes/payroll'));
+app.use('/api/export', require('./routes/exportRoutes.js'));
 
 // Root route
 app.get('/', (req, res) => {
@@ -105,8 +106,15 @@ startAutoCheckoutJob();
 startBreakMonitorJob();
 // --- END CRON JOBS ---
 
-const server = app.listen(PORT, () => {
+const { createServer } = require('http');
+const { initializeSocket } = require('./socket/socketManager.js');
+
+const httpServer = createServer(app);
+const io = initializeSocket(httpServer);
+
+const server = httpServer.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log('Socket.io initialized');
 
   // 🏆 Render Anti-Sleep Integration
   // Use a self-ping every 14 minutes to keep the free instance alive

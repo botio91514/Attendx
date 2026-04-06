@@ -13,6 +13,7 @@ const {
 } = require('../utils/attendanceHelpers');
 const { sendEmail } = require('../utils/emailService');
 const { lateArrivalTemplate } = require('../utils/emailTemplates');
+const { emitToAdmins } = require('../socket/socketManager.js');
 
 /**
  * @desc    Check-in for the day
@@ -132,6 +133,24 @@ const checkIn = async (req, res, next) => {
       }));
       await Notification.insertMany(notifications);
     }
+
+    // --- SOCKET EMIT (ADDED) ---
+    emitToAdmins('attendance:checkin', {
+      userId: req.user.id || req.user._id,
+      employeeName: req.user.name,
+      employeeId: req.user.employeeId,
+      checkInTime: new Date().toISOString(),
+      status: computedStatus === 'late' ? 'late' : 'present',
+      department: req.user.department
+    });
+
+    emitToAdmins('attendance:liveUpdate', {
+      action: 'checkin',
+      userId: req.user.id || req.user._id,
+      employeeName: req.user.name,
+      status: computedStatus === 'late' ? 'late' : 'present'
+    });
+    // --- END SOCKET EMIT ---
   } catch (error) {
     next(error);
   }
@@ -227,6 +246,21 @@ const checkOut = async (req, res, next) => {
       },
       message: 'Check-out recorded successfully',
     });
+
+    // --- SOCKET EMIT (ADDED) ---
+    emitToAdmins('attendance:checkout', {
+      userId: req.user.id || req.user._id,
+      employeeName: req.user.name,
+      checkOutTime: new Date().toISOString(),
+      netWorkingMinutes: attendance.totalWorkingHours
+    });
+
+    emitToAdmins('attendance:liveUpdate', {
+      action: 'checkout',
+      userId: req.user.id || req.user._id,
+      employeeName: req.user.name
+    });
+    // --- END SOCKET EMIT ---
   } catch (error) {
     next(error);
   }

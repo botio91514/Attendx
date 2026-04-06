@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket';
 
 interface Notification {
   _id: string;
@@ -26,6 +27,7 @@ interface NotificationContextType {
   markAsRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   markByType: (type: string | string[]) => Promise<void>;
+  isSocketConnected: boolean;
 }
 
 interface ApiResponse {
@@ -40,6 +42,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   
   const notificationsRef = useRef<Notification[]>([]);
   const isFetchingRef = useRef(false);
@@ -188,6 +191,105 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
+  // --- SOCKET CONNECTION EFFECT ---
+  useEffect(() => {
+    const token = localStorage.getItem('attendx_token');
+    if (!token) return;
+
+    // Connect socket
+    const socket = connectSocket(token);
+
+    // Connection events
+    socket.on('connect', () => {
+      setIsSocketConnected(true);
+      console.log('Socket connected');
+    });
+
+    socket.on('disconnect', () => {
+      setIsSocketConnected(false);
+      console.log('Socket disconnected — polling active');
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection failed:', err.message);
+      setIsSocketConnected(false);
+      // Polling continues as fallback — no action needed
+    });
+
+    // === NOTIFICATION EVENTS ===
+
+    // New notification (all types)
+    socket.on('notification:new', (data) => {
+      // Add to notifications state immediately
+      setNotifications(prev => [{
+        _id: Date.now().toString(), // temp ID
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        link: data.link,
+        isRead: false,
+        createdAt: data.timestamp,
+        sender: { name: 'AttendX System' }
+      }, ...prev]);
+
+      // Show toast immediately
+      toast(data.title, {
+        description: data.message,
+        icon: '🔔',
+        action: data.link ? {
+          label: 'View',
+          onClick: () => window.location.href = data.link
+        } : undefined
+      });
+
+      // Play notification sound
+      try {
+        const audio = new Audio('/notification.mp3');
+        audio.volume = 0.3;
+        audio.play().catch(() => {});
+      } catch {}
+    });
+
+    // Leave status changed
+    socket.on('leave:statusChanged', (data) => {
+      // Trigger a silent fetch to sync leave data
+      fetchRef.current(true);
+    });
+
+    // New broadcast notice
+    socket.on('notice:broadcast', (data) => {
+      toast(`📢 ${data.title}`, {
+        description: data.content.substring(0, 80) + '...',
+        duration: 8000,  // longer for announcements
+        action: {
+          label: 'View',
+          onClick: () => window.location.href = '/notices'
+        }
+      });
+    });
+
+    // Break exceeded alert
+    socket.on('break:exceeded', (data) => {
+      toast.warning('⚠️ Break Time Exceeded!', {
+        description: `You have been on break for ${data.elapsedMinutes} minutes. Allowed: ${data.allowedMinutes} minutes.`,
+        duration: 10000,
+        action: {
+          label: 'Return Now',
+          onClick: () => window.location.href = '/dashboard'
+        }
+      });
+    });
+
+    // Cleanup on unmount
+    return () => {
+      socket.off('notification:new');
+      socket.off('leave:statusChanged');
+      socket.off('notice:broadcast');
+      socket.off('break:exceeded');
+      disconnectSocket();
+    };
+  }, []); // runs once on mount
+
   // Main Effect for Initial Load and Polling
   useEffect(() => {
     const token = localStorage.getItem('attendx_token');
@@ -219,11 +321,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         fetchRef.current(true);
       }
       
-      const nextInterval = Math.min(10000 * Math.pow(2, failureCountRef.current), 60000);
+      const nextInterval = Math.min(60000 * Math.pow(2, failureCountRef.current), 60000);
       pollingTimeout = setTimeout(poll, nextInterval);
     };
 
-    pollingTimeout = setTimeout(poll, 10000);
+    pollingTimeout = setTimeout(poll, 60000);
 
     return () => clearTimeout(pollingTimeout);
   }, []);
@@ -269,7 +371,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       retryFetch,
       markAsRead,
       markAllRead,
-      markByType
+      markByType,
+      isSocketConnected
     }}>
       {children}
     </NotificationContext.Provider>

@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const { validationResult } = require('express-validator');
 const { sendEmail } = require('../utils/emailService');
 const { broadcastNoticeTemplate } = require('../utils/emailTemplates');
+const { emitToAll } = require('../socket/socketManager.js');
 
 /**
  * @desc    Get all announcements (Filtered by active)
@@ -117,6 +118,23 @@ const createAnnouncement = async (req, res, next) => {
       data: announcement,
       message: 'Announcement posted & notifications triggered successfully',
     });
+
+    // --- SOCKET EMIT (ADDED) ---
+    emitToAll('notification:new', {
+      type: 'announcement',
+      title: `📢 ${title}`,
+      message: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+      link: '/notices'
+    });
+
+    emitToAll('notice:broadcast', {
+      noticeId: announcement._id,
+      title: title,
+      content: content,
+      postedBy: req.user.name,
+      postedAt: new Date().toISOString()
+    });
+    // --- END SOCKET EMIT ---
   } catch (error) {
     next(error);
   }

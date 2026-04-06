@@ -6,6 +6,7 @@ const Notification = require('../models/Notification');
 const { sendEmail } = require('../utils/emailService');
 const { breakExceededTemplate } = require('../utils/emailTemplates');
 const { getTodayDate } = require('../utils/attendanceHelpers');
+const { emitToUser } = require('../socket/socketManager.js');
 
 /**
  * @desc    Background job to monitor breaks and alert if policy exceeded
@@ -76,6 +77,21 @@ const startBreakMonitorJob = () => {
           } catch (notifErr) {
             console.error('Failed to create in-app notification:', notifErr);
           }
+
+          // --- SOCKET EMIT (ADDED) ---
+          emitToUser(record.userId._id, 'notification:new', {
+            type: 'break_alert',
+            title: '⚠️ Break Time Exceeded',
+            message: `You have exceeded your allowed break time. Please return immediately.`,
+            link: '/dashboard'
+          });
+
+          emitToUser(record.userId._id, 'break:exceeded', {
+            breakStartTime: record.break.startTime,
+            elapsedMinutes: totalElapsedMinutes,
+            allowedMinutes: allowedMinutes
+          });
+          // --- END SOCKET EMIT ---
         }
       }
     } catch (error) {

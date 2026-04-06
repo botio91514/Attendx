@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { CircleDollarSign, Loader2, Download, Search, Filter, AlertCircle, Info, TrendingUp, Wallet, ArrowUpRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { ExportButton } from '@/components/ExportButton';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -133,7 +134,7 @@ const Payroll: React.FC = () => {
                 <table className="w-full">
                    <thead>
                       <tr className="border-b border-glass-border bg-secondary/30">
-                         {['Employee', 'Base Pay', 'Attendance (P/H/A)', 'Net Payable', 'Gross Payout'].map(h => (
+                         {['Employee', 'Base Pay', 'Attendance (P/H/A)', 'Net Payable', 'Gross Payout', 'Action'].map(h => (
                            <th key={h} className="text-left text-xs font-bold text-muted-foreground px-5 py-4 uppercase tracking-wider">{h}</th>
                          ))}
                       </tr>
@@ -169,6 +170,9 @@ const Payroll: React.FC = () => {
                                    <span className="text-sm font-bold text-foreground">₹{entry.calculations.grossSalary.toLocaleString()}</span>
                                    <span className="text-[10px] text-muted-foreground italic">Rate: ₹{entry.calculations.dailyRate}/day</span>
                                 </div>
+                             </td>
+                             <td className="px-5 py-4 text-right">
+                               <ExportButton type="payslip" employeeId={entry.userId || entry._id} dateRange={{from: `${filters.year}-${filters.month}-01`, to: `${filters.year}-${filters.month}-28`}} label="Payslip PDF" variant="outline" size="sm" />
                              </td>
                           </tr>
                         ))

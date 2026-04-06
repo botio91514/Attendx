@@ -4,6 +4,7 @@ import StatCard from '@/components/StatCard';
 import { Download, Clock, Users, BarChart3, TrendingUp, Loader2, Calendar, Search, Filter, RotateCcw, ChevronLeft, ChevronRight, List, CheckCircle2, XCircle, Palmtree } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { ExportButton } from '@/components/ExportButton';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -179,11 +180,15 @@ const Reports: React.FC = () => {
                 {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
               </div>
               <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="p-2 hover:bg-secondary transition-colors"><ChevronRight className="w-4 h-4" /></button>
+              <div className="border-l border-glass-border p-1">
+                 <ExportButton type="attendance" employeeId={selectedEmp?._id} dateRange={{ from: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`, to: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-31` }} variant="ghost" size="sm" label="Export PDF" />
+              </div>
             </div>
           ) : (
             <>
               <button onClick={fetchReport} className="nav-item p-2" title="Refresh"><RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
-              <button className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all"><Download className="w-4 h-4" /> Export CSV</button>
+              <button className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all hidden sm:flex"><Download className="w-4 h-4" /> Export CSV</button>
+              <ExportButton type="attendance" bulk={true} dateRange={{ from: filters.from, to: filters.to }} label="Export All PDF" />
             </>
           )}
         </div>

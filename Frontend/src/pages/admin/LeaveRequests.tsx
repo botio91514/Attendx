@@ -5,6 +5,7 @@ import EmptyState from '@/components/EmptyState';
 import { Check, X, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { ExportButton } from '@/components/ExportButton';
 import { useNotifications } from '@/context/NotificationContext';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -15,6 +16,10 @@ const LeaveRequests: React.FC = () => {
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>('Pending');
   const [loading, setLoading] = useState(true);
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [exportRange, setExportRange] = useState({from: new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0], to: new Date().toISOString().split('T')[0]});
+  const [exportEmp, setExportEmp] = useState('');
+  
+  const uniqueEmployees = Array.from(new Map(leaves.map(l => [l.userId?._id, l.userId])).values()).filter(Boolean);
 
   const fetchLeaves = async () => {
     try {
@@ -72,9 +77,23 @@ const LeaveRequests: React.FC = () => {
 
   return (
     <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.1 } } }} className="space-y-6">
-      <motion.div variants={fadeUp}>
-        <h2 className="text-2xl font-display font-bold text-foreground">Leave Requests</h2>
-        <p className="text-sm text-muted-foreground">Review and manage employee leave applications</p>
+      <motion.div variants={fadeUp} className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground">Leave Requests</h2>
+          <p className="text-sm text-muted-foreground">Review and manage employee leave applications</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+           <input type="date" value={exportRange.from} onChange={e => setExportRange({...exportRange, from: e.target.value})} className="input-floating" />
+           <span className="text-muted-foreground opacity-50">-</span>
+           <input type="date" value={exportRange.to} onChange={e => setExportRange({...exportRange, to: e.target.value})} className="input-floating" />
+           <select value={exportEmp} onChange={e => setExportEmp(e.target.value)} className="input-floating bg-card max-w-[200px]">
+              <option value="">Select Employee</option>
+              {uniqueEmployees.map((emp: any) => (
+                 <option key={emp._id} value={emp._id}>{emp.name}</option>
+              ))}
+           </select>
+           <ExportButton type="leave" employeeId={exportEmp} dateRange={exportRange} label="Export PDF" />
+        </div>
       </motion.div>
 
       <motion.div variants={fadeUp} className="flex gap-1 p-1 glass-card w-fit">
