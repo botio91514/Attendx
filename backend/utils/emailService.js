@@ -1,4 +1,8 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+
+// Force IPv4 as primary for internal Node networking to solve ENETUNREACH issues with IPv6
+dns.setDefaultResultOrder('ipv4first');
 
 /**
  * @desc    Single reusable function to send emails via SMTP
