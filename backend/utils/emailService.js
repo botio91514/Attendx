@@ -1,37 +1,40 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
+const { Resend } = require('resend');
 
-// Force IPv4 as primary for internal Node networking to solve ENETUNREACH issues with IPv6
-dns.setDefaultResultOrder('ipv4first');
+// Initialize Resend with API key from env
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-/**
- * @desc    Single reusable function to send emails via SMTP
- * @param   {Object} options - { to, subject, html }
- */
+// sendEmail — interface stays IDENTICAL to before
+// Every controller calls this exact same way:
+// sendEmail({ to, subject, html })
 const sendEmail = async ({ to, subject, html }) => {
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { 
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    // Validate inputs
+    if (!to || !subject || !html) {
+      console.error('[EMAIL] Missing required fields:', 
+        { to, subject });
+      return;
+    }
 
-    const mailOptions = {
-      from: `"AttendX HR System" <${process.env.EMAIL_USER}>`,
+    const { data, error } = await resend.emails.send({
+      from: 'AttendX HR System <onboarding@resend.dev>',
+      // ↑ Use this default sender until you verify
+      //   your own domain on Resend dashboard
       to,
       subject,
       html,
-    };
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully to ${to}: ${info.messageId}`);
-    return info;
-  } catch (error) {
-    // ⚠️ CRITICAL RULE: NEVER crash the server on email failure
-    console.error('Email failed to send:', error);
-    return null;
+    if (error) {
+      console.error('[EMAIL] Resend error:', error);
+      return;
+    }
+
+    console.log('[EMAIL] Sent successfully:', data?.id);
+    return data;
+
+  } catch (err) {
+    // NEVER crash server on email failure
+    console.error('[EMAIL] Failed to send:', err.message);
   }
 };
 
