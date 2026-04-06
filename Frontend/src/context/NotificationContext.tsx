@@ -254,9 +254,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // New notification (all types)
     socket.on('notification:new', (data) => {
-      // Add to notifications state immediately
+      // Add temporary notification for instant UI
+      const tempId = `temp_${Date.now()}`;
+      
       setNotifications(prev => [{
-        _id: Date.now().toString(), // temp ID
+        _id: tempId,
         type: data.type,
         title: data.title,
         message: data.message,
@@ -276,12 +278,18 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } : undefined
       });
 
-      // Play notification sound
+      // Play sound
       try {
         const audio = new Audio('/notification.mp3');
         audio.volume = 0.3;
         audio.play().catch(() => {});
       } catch {}
+
+      // Fetch real notifications from DB after 1 second
+      // This replaces temp notification with real MongoDB ID
+      setTimeout(() => {
+        fetchRef.current(true);
+      }, 1000);
     });
 
     // Leave status changed
