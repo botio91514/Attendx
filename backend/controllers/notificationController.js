@@ -33,6 +33,19 @@ const getNotifications = async (req, res, next) => {
  */
 const markAsRead = async (req, res, next) => {
   try {
+    const { id } = req.params;
+
+    // Guard against temp IDs and invalid ObjectIds
+    if (!id ||
+        id.startsWith('temp_') ||
+        id.length !== 24 ||
+        !/^[a-fA-F0-9]{24}$/.test(id)) {
+      return res.status(200).json({
+        success: true,
+        message: 'Skipped temporary or invalid ID'
+      });
+    }
+
     const notification = await Notification.findOneAndUpdate(
       { _id: req.params.id, recipient: req.user._id },
       { isRead: true },
@@ -83,6 +96,19 @@ const markAllAsRead = async (req, res, next) => {
  */
 const deleteNotification = async (req, res, next) => {
   try {
+    const { id } = req.params;
+
+    // Guard against temp IDs and invalid ObjectIds
+    if (!id ||
+        id.startsWith('temp_') ||
+        id.length !== 24 ||
+        !/^[a-fA-F0-9]{24}$/.test(id)) {
+      return res.status(200).json({
+        success: true,
+        message: 'Skipped temporary or invalid ID'
+      });
+    }
+
     const notification = await Notification.findOneAndDelete({
       _id: req.params.id,
       recipient: req.user._id,

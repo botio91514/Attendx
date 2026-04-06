@@ -7,6 +7,7 @@ const {
   deleteNotification,
 } = require('../controllers/notificationController');
 const { protect } = require('../middleware/authMiddleware');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 // All notification routes are protected
 router.use(protect);
@@ -27,12 +28,12 @@ router.put('/read-all', markAllAsRead);
  * @route   PUT /api/notifications/:id/read
  * @desc    Mark notification as read
  */
-router.put('/:id/read', markAsRead);
+router.put('/:id/read', validateObjectId, markAsRead);
 
 /**
  * @route   DELETE /api/notifications/:id
  * @desc    Delete notification
  */
-router.delete('/:id', deleteNotification);
+router.delete('/:id', validateObjectId, deleteNotification);
 
 module.exports = router;

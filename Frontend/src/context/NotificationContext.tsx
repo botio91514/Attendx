@@ -3,6 +3,15 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket';
 
+// Validate real MongoDB ObjectId
+const isValidMongoId = (id: string): boolean => {
+  if (!id) return false;
+  if (id.startsWith('temp_')) return false;
+  if (id.length !== 24) return false;
+  if (!/^[a-fA-F0-9]{24}$/.test(id)) return false;
+  return true;
+};
+
 interface Notification {
   _id: string;
   type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'check_in' | 'announcement' | 'break_alert';
@@ -53,7 +62,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     try {
-      const toCache = notifications.slice(0, 50);
+      // Never cache temp notifications
+      const toCache = notifications
+        .filter(n => isValidMongoId(n._id))
+        .slice(0, 50);
       sessionStorage.setItem('attendx_notifications', JSON.stringify(toCache));
     } catch {}
   }, [notifications]);
@@ -121,8 +133,25 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
         
         if (newNotifications.length > 0) {
-          setNotifications(newNotifications);
-        } else if (newNotifications.length === 0 && notificationsRef.current.length === 0) {
+          setNotifications(prev => {
+            // Remove any temp notifications that now
+            // have real counterparts from DB
+            const realIds = new Set(
+              newNotifications.map(n => n._id)
+            );
+            const remainingTemps = prev.filter(n => 
+              n._id.startsWith('temp_') && 
+              !realIds.has(n._id)
+            );
+            // Real notifications + any still-pending temps
+            return [...newNotifications, ...remainingTemps];
+          });
+        } else if (
+          newNotifications.length === 0 && 
+          notificationsRef.current.filter(
+            n => !n._id.startsWith('temp_')
+          ).length === 0
+        ) {
           setNotifications([]);
         }
       }
@@ -150,12 +179,19 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [fetchNotifications]);
 
   const markAsRead = async (id: string) => {
-    if (id.startsWith('temp_')) return;
+    // Skip invalid or temp IDs
+    if (!isValidMongoId(id)) return;
+    
     const previousNotifications = [...notificationsRef.current];
     try {
-      // Optimistic update
-      setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
-      const res = await api.put(`/notifications/${id}/read`, {});
+      setNotifications(prev => 
+        prev.map(n => n._id === id 
+          ? { ...n, isRead: true } : n
+        )
+      );
+      const res = await api.put(
+        `/notifications/${id}/read`, {}
+      );
       if (!res.success) {
         setNotifications(previousNotifications);
         toast.error('Failed to update notification');
@@ -169,8 +205,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const markAllRead = async () => {
     const previousNotifications = [...notificationsRef.current];
     try {
-      // Optimistic update
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      // Optimistic update for ALL notifications in UI
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, isRead: true }))
+      );
+      
       const res = await api.put('/notifications/read-all', {});
       if (!res.success) {
         setNotifications(previousNotifications);
@@ -190,7 +229,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         .filter(n => 
           !n.isRead && 
           types.includes(n.type) &&
-          !n._id.startsWith('temp_')
+          isValidMongoId(n._id)  // ← only real IDs
         )
         .map(n => n._id);
       
@@ -257,23 +296,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // === NOTIFICATION EVENTS ===
 
-    // New notification (all types)
     socket.on('notification:new', (data) => {
-      // Add temporary notification for instant UI
       const tempId = `temp_${Date.now()}`;
       
+      // Step 1: Add to UI instantly with temp ID
       setNotifications(prev => [{
         _id: tempId,
         type: data.type,
         title: data.title,
         message: data.message,
-        link: data.link,
+        link: data.link || '',
         isRead: false,
-        createdAt: data.timestamp,
+        createdAt: data.timestamp || new Date().toISOString(),
         sender: { name: 'AttendX System' }
       }, ...prev]);
 
-      // Show toast immediately
+      // Step 2: Show toast
       toast(data.title, {
         description: data.message,
         icon: '🔔',
@@ -283,17 +321,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } : undefined
       });
 
-      // Play sound
+      // Step 3: Play sound safely
       try {
         const audio = new Audio('/notification.mp3');
         audio.volume = 0.3;
         audio.play().catch(() => {});
       } catch {}
 
-      // Fetch real notifications from DB after 1 second
-      // This replaces temp notification with real MongoDB ID
+      // Step 4: After 2 seconds fetch real notifications
+      // This REPLACES temp ID with real MongoDB ID
+      // All subsequent markAsRead calls use real ID
       setTimeout(() => {
-        fetchRef.current(true);
+        if (isMountedRef.current) {
+          fetchRef.current(true);
+        }
       }, 2000);
     });
 
