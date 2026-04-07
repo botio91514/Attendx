@@ -5,6 +5,7 @@ import { Download, Clock, Users, BarChart3, TrendingUp, Loader2, Calendar, Searc
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { ExportButton } from '@/components/ExportButton';
+import { useAuth } from '@/context/AuthContext';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -17,6 +18,7 @@ const Reports: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEmp, setSelectedEmp] = useState<any>(null);
 
+  const { token } = useAuth();
   const [filters, setFilters] = useState({
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -94,10 +96,55 @@ const Reports: React.FC = () => {
     return `${h}h ${m}m`;
   };
 
-  const setDatePreset = (days: number) => {
-    const to = new Date().toISOString().split('T')[0];
-    const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    setFilters(prev => ({ ...prev, from, to }));
+  const handleCSVExport = async () => {
+    try {
+      setLoading(true);
+      const query = new URLSearchParams({ from: filters.from, to: filters.to });
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      
+      const response = await fetch(`${API_URL}/export/attendance/all/csv?${query}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) throw new Error('CSV Export failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `staff_attendance_${filters.from}_to_${filters.to}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      toast.success('CSV downloaded successfully!');
+    } catch (err) {
+      toast.error('Failed to export CSV');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setDatePreset = (preset: string) => {
+    const today = new Date();
+    // Use local date to avoid UTC off-by-one
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const todayStr = toDateStr(today);
+
+    if (preset === 'today') {
+      setFilters(prev => ({ ...prev, from: todayStr, to: todayStr }));
+    } else if (preset === 'yesterday') {
+      const y = new Date(today); y.setDate(today.getDate() - 1);
+      const yStr = toDateStr(y);
+      setFilters(prev => ({ ...prev, from: yStr, to: yStr }));
+    } else if (preset === '7') {
+      const f = new Date(today); f.setDate(today.getDate() - 6);
+      setFilters(prev => ({ ...prev, from: toDateStr(f), to: todayStr }));
+    } else if (preset === '30') {
+      const f = new Date(today); f.setDate(today.getDate() - 29);
+      setFilters(prev => ({ ...prev, from: toDateStr(f), to: todayStr }));
+    }
   };
 
   const renderCalendar = () => {
@@ -186,9 +233,20 @@ const Reports: React.FC = () => {
             </div>
           ) : (
             <>
-              <button onClick={fetchReport} className="nav-item p-2" title="Refresh"><RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
-              <button className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all hidden sm:flex"><Download className="w-4 h-4" /> Export CSV</button>
-              <ExportButton type="attendance" bulk={true} dateRange={{ from: filters.from, to: filters.to }} label="Export PDF Report" />
+              <button 
+                onClick={handleCSVExport}
+                disabled={loading}
+                className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all hidden sm:flex"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Export CSV
+              </button>
+              <ExportButton 
+                type="attendance" 
+                bulk={true} 
+                dateRange={{ from: filters.from, to: filters.to }} 
+                label="Download PDF Log" 
+              />
             </>
           )}
         </div>
@@ -197,8 +255,13 @@ const Reports: React.FC = () => {
       {viewMode === 'list' ? (
         <>
           <motion.div variants={fadeUp} className="flex flex-wrap gap-2">
-            {[{ label: 'Today', d: 0 }, { label: 'Yesterday', d: 1 }, { label: 'Last 7 Days', d: 7 }, { label: 'Last 30 Days', d: 30 }].map(p => (
-              <button key={p.label} onClick={() => setDatePreset(p.d)} className="px-3 py-1.5 rounded-lg bg-secondary/50 text-xs font-bold text-muted-foreground hover:bg-primary/10 hover:text-primary transition-all border border-glass-border">{p.label}</button>
+            {[
+              { label: 'Today', preset: 'today' },
+              { label: 'Yesterday', preset: 'yesterday' },
+              { label: 'Last 7 Days', preset: '7' },
+              { label: 'Last 30 Days', preset: '30' }
+            ].map(p => (
+              <button key={p.label} onClick={() => setDatePreset(p.preset)} className="px-3 py-1.5 rounded-lg bg-secondary/50 text-xs font-bold text-muted-foreground hover:bg-primary/10 hover:text-primary transition-all border border-glass-border">{p.label}</button>
             ))}
           </motion.div>
 

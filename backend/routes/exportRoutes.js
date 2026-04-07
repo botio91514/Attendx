@@ -2,6 +2,7 @@ const express = require('express');
 const { 
   exportAttendancePDF,
   exportAllAttendancePDF,
+  exportAttendanceCSV,
   exportPayslipPDF,
   exportLeavePDF
 } = require('../controllers/exportController.js');
@@ -21,5 +22,6 @@ router.get('/leave/:employeeId', exportLeavePDF);
 
 // Bulk exports (all employees)
 router.get('/attendance/all/bulk', exportAllAttendancePDF);
+router.get('/attendance/all/csv', exportAttendanceCSV);
 
 module.exports = router;
