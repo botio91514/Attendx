@@ -4,7 +4,8 @@ const {
   generateLeaveReportPDF,
   addReportHeader,
   addEmployeeInfoCard,
-  addPageFooter
+  addPageFooter,
+  addAttendanceSection
 } = require('../utils/pdfGenerator.js');
 
 const User = require('../models/User');
@@ -82,18 +83,14 @@ const exportAllAttendancePDF = async (req, res) => {
       // Add page break between employees
       if (i > 0) doc.addPage();
 
-      // Reuse header and employee card
+      // Header
       addReportHeader(doc, 'Attendance Report', `${emp.name}`, dateRange);
+      
+      // Employee info card
       addEmployeeInfoCard(doc, emp);
       
-      const present = records.filter(r => r.status === 'present').length;
-      const late = records.filter(r => r.status === 'late').length;
-      const absent = records.filter(r => r.status === 'absent').length;
-      const onLeave = records.filter(r => r.status === 'on-leave' || r.status === 'leave').length;
-
-      doc.fillColor('#1e293b').fontSize(10).font('Helvetica-Bold')
-         .text(`Summary: ${present} Present, ${late} Late, ${absent} Absent, ${onLeave} Leave`);
-      doc.moveDown(1);
+      // 🏆 Detailed Attendance Table
+      await addAttendanceSection(doc, emp, records, dateRange);
     }
 
     addPageFooter(doc);

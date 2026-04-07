@@ -136,45 +136,13 @@ const addEmployeeInfoCard = (doc, employee) => {
   doc.moveDown(4);
 };
 
-const generateAttendancePDF = async (
-  res, employee, attendanceRecords, dateRange
-) => {
-  const doc = new PDFTable({ 
-    margin: 40,
-    size: 'A4',
-    bufferPages: true  // needed for footer page numbers
-  });
-
-  // Stream directly to response
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename="attendance_${employee.employeeId}` +
-    `_${dateRange.from}_${dateRange.to}.pdf"`
-  );
-  doc.pipe(res);
-
-  // Header
-  addReportHeader(
-    doc,
-    'Attendance Report',
-    `${employee.name} — ${dateRange.from} to ${dateRange.to}`,
-    dateRange
-  );
-
-  // Employee info card
-  addEmployeeInfoCard(doc, employee);
-
+const addAttendanceSection = async (doc, emp, records, dateRange) => {
   // Summary stats row
-  const present = attendanceRecords
-    .filter(r => r.status === 'present').length;
-  const late = attendanceRecords
-    .filter(r => r.status === 'late').length;
-  const absent = attendanceRecords
-    .filter(r => r.status === 'absent').length;
-  const onLeave = attendanceRecords
-    .filter(r => r.status === 'on-leave' || r.status === 'leave').length;
-  const totalDays = attendanceRecords.length;
+  const present = records.filter(r => r.status === 'present').length;
+  const late = records.filter(r => r.status === 'late').length;
+  const absent = records.filter(r => r.status === 'absent').length;
+  const onLeave = records.filter(r => r.status === 'on-leave' || r.status === 'leave').length;
+  const totalDays = records.length;
   const workingDays = present + late;
 
   // Stats boxes (4 across)
@@ -215,7 +183,7 @@ const generateAttendancePDF = async (
       { label: 'Break', width: 60 },
       { label: 'Status', width: 70 }
     ],
-    rows: attendanceRecords.map(record => {
+    rows: records.map(record => {
       const checkIn = record.checkIn 
         ? new Date(record.checkIn).toLocaleTimeString(
             'en-IN', { timeZone: 'Asia/Kolkata', 
@@ -252,19 +220,12 @@ const generateAttendancePDF = async (
 
   await doc.table(table, {
     prepareHeader: () => {
-      doc.font('Helvetica-Bold')
-         .fontSize(9)
-         .fillColor(COLORS.white);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.white);
     },
     prepareRow: (row, indexColumn, indexRow) => {
-      doc.font('Helvetica')
-         .fontSize(8)
-         .fillColor(COLORS.text);
-      // Alternate row colors
+      doc.font('Helvetica').fontSize(8).fillColor(COLORS.text);
       if (indexRow % 2 === 0) {
-        doc.rect(
-          40, doc.y, doc.page.width - 80, 20
-        ).fill(COLORS.lightGray);
+        doc.rect(40, doc.y, doc.page.width - 80, 20).fill(COLORS.lightGray);
       }
     },
     headerColor: COLORS.dark,
@@ -280,14 +241,40 @@ const generateAttendancePDF = async (
   doc.fillColor(COLORS.text)
      .fontSize(10)
      .font('Helvetica-Bold')
-     .text(
-       `Total Working Days: ${workingDays} / ${totalDays}  |  ` +
-       `Attendance Rate: ` +
-       `${totalDays > 0 
-         ? Math.round((workingDays/totalDays)*100) 
-         : 0}%`,
-       40, doc.y
-     );
+     .text(`Total Working Days: ${workingDays} / ${totalDays}  |  Attendance Rate: ${totalDays > 0 ? Math.round((workingDays/totalDays)*100) : 0}%`, 40, doc.y);
+};
+
+const generateAttendancePDF = async (
+  res, employee, attendanceRecords, dateRange
+) => {
+  const doc = new PDFTable({ 
+    margin: 40,
+    size: 'A4',
+    bufferPages: true
+  });
+
+  // Stream directly to response
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="attendance_${employee.employeeId}` +
+    `_${dateRange.from}_${dateRange.to}.pdf"`
+  );
+  doc.pipe(res);
+
+  // Header
+  addReportHeader(
+    doc,
+    'Attendance Report',
+    `${employee.name} — ${dateRange.from} to ${dateRange.to}`,
+    dateRange
+  );
+
+  // Employee info card
+  addEmployeeInfoCard(doc, employee);
+
+  // 🏆 Reusable Attendance Section
+  await addAttendanceSection(doc, employee, attendanceRecords, dateRange);
 
   addPageFooter(doc);
   doc.end();
@@ -612,6 +599,7 @@ module.exports = {
   addReportHeader,
   addEmployeeInfoCard,
   addPageFooter,
+  addAttendanceSection,
   generateAttendancePDF,
   generatePayslipPDF,
   generateLeaveReportPDF

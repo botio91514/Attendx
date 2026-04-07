@@ -499,6 +499,7 @@ const getAttendanceHistory = async (req, res, next) => {
     // 1. Get real attendance records
     const attendanceRecords = await Attendance.find(query).sort({ date: 1 });
     let finalAttendance = attendanceRecords.map(a => a.toObject());
+    const todayStr = getTodayDate();
 
     // 2. Inject Approved Leaves (The "Virtual" Records)
     if (startD && endD) {
@@ -519,7 +520,7 @@ const getAttendanceHistory = async (req, res, next) => {
             const dateStr = current.toISOString().split('T')[0];
             const hasAttendance = finalAttendance.some(a => a.date.startsWith(dateStr));
             
-            if (!hasAttendance) {
+            if (!hasAttendance && dateStr <= todayStr) {
               finalAttendance.push({
                 userId,
                 date: dateStr,
@@ -544,7 +545,7 @@ const getAttendanceHistory = async (req, res, next) => {
         const dateStr = holiday.date.toISOString().split('T')[0];
         const hasAttendanceOrLeave = finalAttendance.some(a => a.date.startsWith(dateStr));
         
-        if (!hasAttendanceOrLeave) {
+        if (!hasAttendanceOrLeave && dateStr <= todayStr) {
           finalAttendance.push({
             userId,
             date: dateStr,
@@ -564,7 +565,7 @@ const getAttendanceHistory = async (req, res, next) => {
           const dateStr = current.toISOString().split('T')[0];
           const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
           
-          if (!hasRecord) {
+          if (!hasRecord && dateStr <= todayStr) {
             finalAttendance.push({
               userId,
               date: dateStr,

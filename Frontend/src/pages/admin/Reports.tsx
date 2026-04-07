@@ -188,7 +188,7 @@ const Reports: React.FC = () => {
             <>
               <button onClick={fetchReport} className="nav-item p-2" title="Refresh"><RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
               <button className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all hidden sm:flex"><Download className="w-4 h-4" /> Export CSV</button>
-              <ExportButton type="attendance" bulk={true} dateRange={{ from: filters.from, to: filters.to }} label="Export All PDF" />
+              <ExportButton type="attendance" bulk={true} dateRange={{ from: filters.from, to: filters.to }} label="Export PDF Report" />
             </>
           )}
         </div>
@@ -234,9 +234,9 @@ const Reports: React.FC = () => {
 
           <motion.div variants={fadeUp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard icon={<Users />} label="Record Count" value={filteredAttendance.length.toString()} accentClass="text-primary" />
-            <StatCard icon={<Clock />} label="Avg Hours" value={data?.stats?.avgWorkingHours ? data.stats.avgWorkingHours.toFixed(1) + 'h' : '0h'} accentClass="text-success" />
-            <StatCard icon={<BarChart3 />} label="Total Present" value={data?.stats?.present?.toString() || '0'} accentClass="text-foreground" />
-            <StatCard icon={<TrendingUp />} label="On-Time Rate" value={data?.stats?.late != null && data?.attendance?.length > 0 ? (100 - (data.stats.late / data.attendance.length * 100)).toFixed(1) + '%' : '100%'} accentClass="text-warning" />
+            <StatCard icon={<Clock />} label="Avg Hours" value={data?.stats?.averageWorkingHours ? data.stats.averageWorkingHours + 'h' : '0h'} accentClass="text-success" />
+            <StatCard icon={<BarChart3 />} label="Total Present" value={data?.stats?.presentDays?.toString() || '0'} accentClass="text-foreground" />
+            <StatCard icon={<TrendingUp />} label="On-Time Rate" value={data?.stats?.lateDays != null && data?.attendance?.length > 0 ? (100 - (data.stats.lateDays / data.attendance.length * 100)).toFixed(1) + '%' : '100%'} accentClass="text-warning" />
           </motion.div>
 
           <motion.div variants={fadeUp} className="glass-card overflow-hidden">

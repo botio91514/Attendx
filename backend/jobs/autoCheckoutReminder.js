@@ -350,16 +350,23 @@ const startAutoCheckoutJob = () => {
       
       const results = await Promise.allSettled(
         pendingRecords.map(async (record) => {
-          // Construct the checkout Date object
-          const checkoutDate = new Date();
-          // Get today's year/month/day in IST
-          const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-          checkoutDate.setFullYear(nowIST.getFullYear(), nowIST.getMonth(), nowIST.getDate());
-          checkoutDate.setHours(endHour, endMin, 0, 0);
+          // 🏆 Construct the correct UTC date from IST office end time
+          // If officeEndTime is 18:30 (IST), we want a UTC Date where (UTC Time + 5.5h) = 18:30
+          const [endH, endM] = (settings.officeEndTime || '18:15').split(':').map(Number);
+          
+          const now = new Date();
+          const istOffset = 5.5 * 60 * 60 * 1000;
+          
+          // 1. Get today's date in IST
+          const istDate = new Date(now.getTime() + istOffset);
+          // 2. Set the desired IST clock time on this IST day (using UTC methods on the offsetted date)
+          istDate.setUTCHours(endH, endM, 0, 0);
+          // 3. Convert back to absolute UTC by subtracting the offset
+          const checkoutDate = new Date(istDate.getTime() - istOffset);
 
           // Update record
           record.checkOut = checkoutDate;
-          record.notes = (record.notes ? record.notes + ' ' : '') + '[Auto-Checkout by System at 6:30 PM]';
+          record.notes = (record.notes ? record.notes + ' ' : '') + `[Auto-Checkout by System at ${settings.officeEndTime || '18:15'} IST]`;
           
           record._settings = settings; 
           await record.save();
