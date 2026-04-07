@@ -14,8 +14,7 @@ import {
   ChevronRight,
   TrendingUp,
   Download,
-  AlertCircle,
-  Loader2
+  AlertCircle
 } from "lucide-react"
 import { format, startOfDay, endOfDay, isValid } from "date-fns"
 import { toast } from "sonner"
@@ -180,311 +179,287 @@ export const AdminTasksPage: React.FC = () => {
   }, [data])
 
   return (
-    <div className="container max-w-7xl mx-auto py-8 px-4 space-y-10 min-h-screen">
-      <Tabs defaultValue="live" onValueChange={setActiveTab} className="space-y-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-display font-bold tracking-tight text-foreground">Task Productivity</h1>
-            <p className="text-sm text-muted-foreground font-medium">Organization-wide real-time monitoring and reporting.</p>
+    <div className="container max-w-7xl mx-auto py-8 px-4 space-y-6">
+      <Tabs defaultValue="live" onValueChange={setActiveTab} className="space-y-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">Tasks Monitor</h1>
+            <p className="text-slate-500 font-medium dark:text-slate-400">Track real-time productivity and generate performance reports.</p>
           </div>
-          <TabsList className="bg-secondary/50 p-1 rounded-2xl border border-glass-border">
-            <TabsTrigger value="live" className="rounded-xl px-8 py-2.5 data-[state=active]:bg-white data-[state=active]:shadow-xl data-[state=active]:text-primary font-bold transition-all">
-              <Monitor className="w-4 h-4 mr-2" /> Live Status
+          <TabsList className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            <TabsTrigger value="live" className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <Monitor className="w-4 h-4 mr-2" /> Live Monitor
             </TabsTrigger>
-            <TabsTrigger value="report" className="rounded-xl px-8 py-2.5 data-[state=active]:bg-white data-[state=active]:shadow-xl data-[state=active]:text-primary font-bold transition-all">
-              <FileText className="w-4 h-4 mr-2" /> Performance Reports
+            <TabsTrigger value="report" className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <FileText className="w-4 h-4 mr-2" /> Task Reports
             </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="live" className="space-y-10 mt-0">
+        <TabsContent value="live" className="space-y-6 mt-0">
           {/* Header Actions */}
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6 glass-card p-5 border-glass-border bg-secondary/10">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center gap-4 w-full md:w-auto">
-              <div className="relative w-full md:w-56">
-                <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+              <div className="relative w-full md:w-48">
+                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input 
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="pl-12 h-12 rounded-xl bg-white/50 border-glass-border font-bold text-slate-700 focus:ring-primary shadow-sm"
+                  className="pl-10 h-10 rounded-lg"
                 />
               </div>
-              <Button 
-                variant="outline" 
-                size="icon" 
-                onClick={() => fetchLiveData()} 
-                disabled={isLoading} 
-                className="rounded-xl h-12 w-12 bg-white/50 hover:bg-white shadow-sm border-glass-border"
-              >
-                <RefreshCcw className={cn("w-5 h-5 text-primary", isLoading && "animate-spin")} />
+              <Button variant="ghost" size="icon" onClick={() => fetchLiveData()} disabled={isLoading} className="rounded-full">
+                <RefreshCcw className={cn("w-4 h-4 text-slate-500", isLoading && "animate-spin")} />
               </Button>
             </div>
             
-            <div className="flex items-center gap-3 px-4 py-2 bg-primary/5 rounded-full border border-primary/10">
-              <Clock3 className="w-3.5 h-3.5 text-primary" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-primary/70">
-                Last Sync: {format(lastUpdated, "hh:mm:ss a")}
-              </span>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <Clock3 className="w-3 h-3" />
+              Last updated: {format(lastUpdated, "hh:mm:ss a")}
             </div>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: "Active Now", value: stats.activeNow, icon: <Timer />, sub: "Productive Staff", color: "text-success", bg: "bg-success/10" },
-              { label: "Tasks Logged", value: stats.totalTasks, icon: <CheckCircle2 />, sub: "Daily Activity", color: "text-sky-500", bg: "bg-sky-500/10" },
-              { label: "Completion", value: stats.completed, icon: <TrendingUp />, sub: "Work Finished", color: "text-teal-500", bg: "bg-teal-500/10" },
-              { label: "Total Working", value: `${stats.totalHours}h`, icon: <Clock />, sub: "Cumulative Time", color: "text-amber-500", bg: "bg-amber-500/10" }
+              { label: "Working Now", value: stats.activeNow, icon: <Timer className="w-5 h-5 text-emerald-500" />, sub: "Active Employees" },
+              { label: "Tasks Today", value: stats.totalTasks, icon: <CheckCircle2 className="w-5 h-5 text-sky-500" />, sub: "Total Logged" },
+              { label: "Completed", value: stats.completed, icon: <TrendingUp className="w-5 h-5 text-teal-500" />, sub: "Finished Today" },
+              { label: "Total Hours", value: `${stats.totalHours}h`, icon: <Clock className="w-5 h-5 text-amber-500" />, sub: "Productive Time" }
             ].map((stat, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.1 }}
-                className="glass-card p-6 border-transparent shadow-sm flex flex-col justify-between overflow-hidden relative group"
-              >
-                <div className="absolute top-0 right-0 w-24 h-24 blur-3xl rounded-full opacity-10 group-hover:opacity-20 transition-opacity" style={{ backgroundColor: 'currentColor' }}></div>
-                <div className={cn("p-3 rounded-2xl w-fit mb-4 border border-glass-border", stat.color, stat.bg)}>
-                  {stat.icon}
-                </div>
-                <div className="space-y-0.5">
-                  <div className="text-3xl font-display font-black text-foreground tracking-tighter">{stat.value}</div>
-                  <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</div>
-                  <div className="text-[10px] text-muted-foreground/60 font-medium">{stat.sub}</div>
-                </div>
-              </motion.div>
+              <Card key={i} className="border-none shadow-sm dark:bg-slate-900/50">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">
+                      {stat.icon}
+                    </div>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</div>
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-tight">{stat.label}</div>
+                    <div className="text-[10px] text-slate-400 font-medium">{stat.sub}</div>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
           {/* Employee Grid */}
-          <div className="space-y-6">
-             <div className="flex items-center gap-3">
-               <div className="relative">
-                 <Users className="w-5 h-5 text-primary" />
-                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-success rounded-full animate-pulse-ring"></span>
-               </div>
-               <h3 className="text-xl font-display font-bold text-foreground">Team Live Status</h3>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {isLoading ? (
-                  Array(8).fill(0).map((_, i) => (
-                    <div key={i} className="h-48 glass-card animate-pulse border-glass-border"></div>
-                  ))
-                ) : sortedSummaries.length === 0 ? (
-                  <div className="col-span-full py-24 text-center glass-card border-dashed bg-secondary/5">
-                    <AlertCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                    <p className="text-muted-foreground font-display font-medium text-lg italic tracking-wide">No team activity found for this period</p>
-                  </div>
-                ) : (
-                  sortedSummaries.map((emp) => (
-                    <motion.div
-                      key={emp.userId}
-                      layout
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="h-full"
-                    >
-                      <div className={cn(
-                        "glass-card h-full flex flex-col p-5 overflow-hidden transition-all duration-500 border group",
-                        emp.activeTask 
-                          ? "border-success/30 shadow-lg shadow-success/10 bg-success/5" 
-                          : "border-glass-border hover:shadow-xl hover:shadow-primary/5"
-                      )}>
-                        <div className="flex items-center gap-4 mb-5 pb-4 border-b border-glass-border/30">
-                          <div className="relative">
-                            <Avatar className="h-12 w-12 border-2 border-white shadow-xl ring-2 ring-primary/10">
-                              <AvatarImage src={emp.profilePhoto} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-sm">
-                                {emp.name.split(" ").map(n => n[0]).join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            {emp.activeTask && (
-                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-success border-2 border-white rounded-full"></span>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-bold text-foreground truncate leading-tight group-hover:text-primary transition-colors">{emp.name}</h4>
-                            <p className="text-[10px] font-black text-muted-foreground tracking-tighter uppercase mt-0.5 flex items-center gap-1">
-                               ID: {emp.employeeId}
-                            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {isLoading ? (
+              Array(8).fill(0).map((_, i) => (
+                <div key={i} className="h-48 bg-slate-100 dark:bg-slate-800 animate-pulse rounded-2xl"></div>
+              ))
+            ) : sortedSummaries.length === 0 ? (
+              <div className="col-span-full py-20 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500 font-bold text-lg italic">No tasks recorded for this date.</p>
+              </div>
+            ) : (
+              sortedSummaries.map((emp) => (
+                <motion.div
+                  key={emp.userId}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Card className={cn(
+                    "overflow-hidden border shadow-sm transition-all duration-300 group hover:shadow-lg flex flex-col h-full",
+                    emp.activeTask ? "bg-emerald-50/10 border-emerald-100" : "bg-white dark:bg-slate-900"
+                  )}>
+                    <CardHeader className="p-4 pb-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 border-2 border-white shadow-sm ring-2 ring-slate-50 dark:ring-slate-800">
+                          <AvatarImage src={emp.profilePhoto} />
+                          <AvatarFallback className="bg-slate-200 text-slate-600 font-bold uppercase text-xs">
+                            {emp.name.split(" ").map(n => n[0]).join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{emp.name}</div>
+                          <div className="text-[10px] font-bold text-slate-400 tracking-wider flex items-center gap-1 uppercase">
+                            <Users className="w-2.5 h-2.5" /> {emp.employeeId}
                           </div>
                         </div>
-                        
-                        <div className="flex-1 space-y-5">
-                          {emp.activeTask ? (
-                            <div className="flex flex-col gap-2">
-                               <div className="flex items-center justify-between">
-                                  <span className="text-[9px] font-black text-success uppercase tracking-widest">Active Now</span>
-                                  <Badge className="text-[9px] bg-success/20 text-success hover:bg-success/30 border-none rounded-full h-4">WATCHING</Badge>
-                               </div>
-                               <p className="text-xs font-bold text-foreground line-clamp-1 italic">"{emp.activeTask.title}"</p>
-                               <div className="flex items-center gap-2 py-2 px-3 bg-white/40 rounded-xl border border-success/10 w-fit">
-                                  <Clock className="w-3.5 h-3.5 text-success animate-pulse" />
-                                  <LiveTimer 
-                                    task={emp.activeTask} 
-                                    startTime={data?.tasks.find(t => t._id === emp.activeTask?._id)?.sessions?.find(s => !s.endTime)?.startTime} 
-                                  />
-                               </div>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-4 bg-secondary/10 rounded-2xl border border-glass-border/30 opacity-70">
-                               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest italic">Out of Office / Idle</p>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-4 pt-1 border-t border-glass-border/30">
-                            <div>
-                               <p className="text-[9px] font-bold text-muted-foreground uppercase mb-0.5">Tasks Done</p>
-                               <p className="text-sm font-black text-foreground">{emp.completedToday}<span className="text-[10px] text-muted-foreground font-medium ml-1">of {emp.totalTasksToday}</span></p>
-                            </div>
-                            <div>
-                               <p className="text-[9px] font-bold text-muted-foreground uppercase mb-0.5">Total Time</p>
-                               <p className="text-sm font-black text-foreground">{formatSeconds(emp.totalSecondsToday)}</p>
-                            </div>
+                        <Badge className={cn(
+                          "rounded-md text-[10px] font-bold uppercase tracking-tight h-5",
+                          emp.activeTask 
+                            ? "bg-emerald-500 hover:bg-emerald-500" 
+                            : emp.totalTasksToday > 0 ? "bg-amber-500 hover:bg-amber-500" : "bg-slate-300 hover:bg-slate-300"
+                        )}>
+                          {emp.activeTask ? "Working" : emp.totalTasksToday > 0 ? "Paused" : "Idle"}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="p-4 pt-0 space-y-4">
+                      {emp.activeTask ? (
+                        <div className="bg-emerald-50/50 dark:bg-emerald-900/20 p-2.5 rounded-xl border border-emerald-100/50">
+                          <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1">Current Task</div>
+                          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate mb-2">
+                            {emp.activeTask.title}
                           </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              </span>
+                              <LiveTimer 
+                                task={emp.activeTask} 
+                                startTime={data?.tasks.find(t => t._id === emp.activeTask?._id)?.sessions?.find(s => !s.endTime)?.startTime} 
+                              />
+                            </div>
+                            <Badge variant="outline" className="text-[10px] h-4 leading-none py-0 font-bold border-emerald-200 text-emerald-600">
+                              Active
+                            </Badge>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-center min-h-[76px]">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase italic">No active task</p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-4 pb-1">
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{emp.completedToday}/{emp.totalTasksToday}</div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Completed</div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{formatSeconds(emp.totalSecondsToday)}</div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Time Today</div>
                         </div>
                       </div>
-                    </motion.div>
-                  ))
-                )}
-             </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="report" className="space-y-8 mt-0">
-          <div className="glass-card border-primary/10 overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-glass-border bg-primary/5">
-              <h3 className="text-xl font-display font-bold text-foreground flex items-center gap-2">
-                 <FileText className="w-5 h-5 text-primary" /> Generate Employee Work Report
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">Audit task history and cumulative productivity records.</p>
-            </div>
-            <div className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+        <TabsContent value="report" className="space-y-6 mt-0">
+          <Card className="border shadow-sm rounded-2xl overflow-hidden">
+            <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b">
+              <CardTitle className="text-xl">Generate Work Report</CardTitle>
+              <CardDescription>Select filters below to view detailed task history for an employee.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div className="space-y-2">
-                  <label className="text-[11px] font-black text-muted-foreground uppercase ml-1 tracking-widest">Select Employee</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Employee</label>
                   <Select 
                     value={reportFilters.userId} 
                     onValueChange={(val) => setReportFilters({...reportFilters, userId: val})}
                   >
-                    <SelectTrigger className="rounded-xl h-12 bg-white shadow-sm border-glass-border font-bold">
-                      <SelectValue placeholder="Choose workforce" />
+                    <SelectTrigger className="rounded-xl h-11">
+                      <SelectValue placeholder="Select Employee" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="all" disabled>Choose workforce</SelectItem>
+                    <SelectContent>
+                      <SelectItem value="all" disabled>Select Employee</SelectItem>
                       {employees.map(emp => (
-                        <SelectItem key={emp._id} value={emp._id} className="font-medium">{emp.name}</SelectItem>
+                        <SelectItem key={emp._id} value={emp._id}>{emp.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-black text-muted-foreground uppercase ml-1 tracking-widest">Date From</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Start Date</label>
                   <Input 
                     type="date" 
                     value={reportFilters.startDate}
                     onChange={(e) => setReportFilters({...reportFilters, startDate: e.target.value})}
-                    className="rounded-xl h-12 bg-white shadow-sm border-glass-border font-bold"
+                    className="rounded-xl h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-black text-muted-foreground uppercase ml-1 tracking-widest">Date To</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">End Date</label>
                   <Input 
                     type="date" 
                     value={reportFilters.endDate}
                     onChange={(e) => setReportFilters({...reportFilters, endDate: e.target.value})}
-                    className="rounded-xl h-12 bg-white shadow-sm border-glass-border font-bold"
+                    className="rounded-xl h-11"
                   />
                 </div>
                 <Button 
                   onClick={generateReport} 
                   disabled={isGeneratingReport}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl h-12 font-display font-bold shadow-xl shadow-primary/20 transition-all hover:scale-105 active:scale-95"
+                  className="bg-primary hover:bg-primary/90 text-white rounded-xl h-11 font-bold shadow-lg shadow-primary/20"
                 >
-                  {isGeneratingReport ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <TrendingUp className="w-5 h-5 mr-2" />}
-                  GENERATE REPORT
+                  {isGeneratingReport ? <RefreshCcw className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
+                  Generate Report
                 </Button>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {reportData && (
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-8"
+              className="space-y-6"
             >
-              <div className="glass-card p-0 border-glass-border overflow-hidden shadow-2xl">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-secondary/20 hover:bg-secondary/20 border-glass-border">
-                      <TableHead className="font-black text-[11px] text-muted-foreground uppercase tracking-widest pl-6 py-5">Activity Date</TableHead>
-                      <TableHead className="font-black text-[11px] text-muted-foreground uppercase tracking-widest py-5">Task Summary</TableHead>
-                      <TableHead className="font-black text-[11px] text-muted-foreground uppercase tracking-widest py-5">Metrics</TableHead>
-                      <TableHead className="font-black text-[11px] text-muted-foreground uppercase tracking-widest py-5 px-6 text-right">Time Invested</TableHead>
+                    <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-50">
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200">Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200">Task Title</TableHead>
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200">Priority</TableHead>
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200">Status</TableHead>
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200">Created By</TableHead>
+                      <TableHead className="font-bold text-slate-800 dark:text-slate-200 text-right">Time Spent</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {reportData.tasks.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-20 italic text-muted-foreground/50 font-medium">
-                          No task history found for this period.
+                        <TableCell colSpan={6} className="text-center py-10 italic text-slate-400 font-medium">
+                          No tasks found for the selected period.
                         </TableCell>
                       </TableRow>
                     ) : (
                       reportData.tasks.map((task) => (
-                        <TableRow key={task._id} className="hover:bg-primary/5 transition-colors border-glass-border">
-                          <TableCell className="font-bold text-slate-500 pl-6 text-xs">{task.date}</TableCell>
-                          <TableCell className="py-4">
-                            <p className="font-bold text-foreground leading-tight truncate max-w-[300px]">{task.title}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">Assigned by: {task.createdBy.name}</p>
+                        <TableRow key={task._id} className="hover:bg-slate-50/50">
+                          <TableCell className="font-medium text-slate-600">{task.date}</TableCell>
+                          <TableCell className="font-bold text-slate-900 max-w-[200px] truncate">{task.title}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase", getPriorityColor(task.priority))}>
+                              {task.priority}
+                            </Badge>
                           </TableCell>
                           <TableCell>
-                             <div className="flex gap-2">
-                                <Badge variant="outline" className={cn("text-[8px] font-black uppercase rounded-md h-4", getPriorityColor(task.priority))}>
-                                  {task.priority}
-                                </Badge>
-                                <Badge variant="outline" className={cn("text-[8px] font-black uppercase rounded-md h-4", getStatusColor(task.status))}>
-                                  {task.status}
-                                </Badge>
-                             </div>
+                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase", getStatusColor(task.status))}>
+                              {task.status}
+                            </Badge>
                           </TableCell>
-                          <TableCell className="text-right pr-6 font-mono font-black text-foreground text-sm tracking-tight">{formatSeconds(task.totalTime)}</TableCell>
+                          <TableCell className="text-slate-500 font-medium">{task.createdBy.name}</TableCell>
+                          <TableCell className="text-right font-mono font-bold text-slate-700">{formatSeconds(task.totalTime)}</TableCell>
                         </TableRow>
                       ))
                     )}
                   </TableBody>
                 </Table>
                 
-                <div className="p-8 bg-primary/5 border-t border-glass-border flex flex-col md:flex-row justify-between items-center gap-6">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-14 w-14 ring-4 ring-white shadow-xl">
-                       <AvatarImage src={employees.find(e => e._id === reportFilters.userId)?.profilePhoto} />
-                       <AvatarFallback className="bg-primary text-primary-foreground font-black uppercase">{employees.find(e => e._id === reportFilters.userId)?.name?.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                        <p className="text-xs font-bold text-primary uppercase tracking-widest">Report For Employee</p>
-                        <h4 className="text-xl font-display font-black text-foreground">{employees.find(e => e._id === reportFilters.userId)?.name}</h4>
-                    </div>
+                <div className="p-6 bg-slate-50/50 dark:bg-slate-800/50 border-t flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div className="text-sm font-medium text-slate-500">
+                    Showing <span className="font-bold text-slate-900">{reportData.tasks.length}</span> results for 
+                    <span className="font-bold text-primary mx-1">{employees.find(e => e._id === reportFilters.userId)?.name}</span>
                   </div>
-                  
-                  <div className="bg-white/80 backdrop-blur-xl px-10 py-5 rounded-3xl border-2 border-primary/30 shadow-2xl text-center md:text-right min-w-[240px] relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-2 opacity-5 scale-150 rotate-12 group-hover:scale-110 transition-transform">
-                       <TrendingUp className="w-20 h-20 text-primary" />
-                    </div>
-                    <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1 relative z-10">Total Period Working Time</p>
-                    <p className="text-4xl font-display font-black text-foreground leading-none relative z-10 tracking-tighter">
+                  <div className="bg-white dark:bg-slate-900 px-6 py-3 rounded-xl border-2 border-primary/20 shadow-sm">
+                    <div className="text-[10px] font-extrabold text-primary uppercase tracking-widest mb-1">Total Period Working Time</div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-slate-100 leading-none">
                       {formatSeconds(reportData.totalSeconds)}
-                    </p>
+                    </div>
                   </div>
                 </div>
               </div>
               
-              <div className="flex justify-end gap-4 pb-10">
-                <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold border-glass-border hover:bg-white shadow-sm transition-all flex gap-2">
-                  <Download className="w-5 h-5 text-muted-foreground" /> EXPORT REPORT (PDF)
+              <div className="flex justify-end">
+                <Button variant="outline" className="rounded-xl font-bold gap-2">
+                  <Download className="w-4 h-4" /> Export as PDF
                 </Button>
               </div>
             </motion.div>
