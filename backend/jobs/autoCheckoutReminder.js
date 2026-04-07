@@ -283,32 +283,64 @@ const runAbsentAlertCheck = async (settings, deadlineStr) => {
 
     const results = await Promise.allSettled(
       absentEmployees.map(async (emp) => {
-        if (await isOnLeave(emp._id, todayStr)) return;
+        // Skip employees on approved leave (they get 'leave' status, not 'absent')
+        if (await isOnLeave(emp._id, todayStr)) {
+          // Create a leave record if not already present
+          await Attendance.findOneAndUpdate(
+            { userId: emp._id, date: todayStr },
+            { $setOnInsert: { userId: emp._id, date: todayStr, status: 'leave' } },
+            { upsert: true, new: true }
+          );
+          console.log(`🍃 [CRON] ${emp.name} is on leave — marked as 'leave'.`);
+          return;
+        }
 
-        const deadlineTimeFmt = (() => {
-          const [h, m] = deadlineStr.split(':').map(Number);
-          const period = h >= 12 ? 'PM' : 'AM';
-          const hour12 = h % 12 || 12;
-          return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
-        })();
+        // ✅ Create ABSENT record in DB (upsert = safe, won't duplicate)
+        const record = await Attendance.findOneAndUpdate(
+          { userId: emp._id, date: todayStr },
+          {
+            $setOnInsert: {
+              userId: emp._id,
+              date: todayStr,
+              status: 'absent',
+              checkIn: null,
+              checkOut: null,
+              totalWorkingHours: 0
+            }
+          },
+          { upsert: true, new: true }
+        );
 
-        const html = absentAlertTemplate({
-          employeeName     : emp.name,
-          todayDate        : todayFmt,
-          officeStartTime  : settings.officeStartTime,
-          gracePeriodMinutes: settings.lateGracePeriod || 0,
-          deadlineTime     : deadlineTimeFmt
-        });
+        console.log(`🚨 [CRON] Marked ${emp.name} as ABSENT for ${todayStr}.`);
 
-        await sendEmail({
-          to      : emp.email,
-          subject : `🚨 AttendX: You haven't checked in yet — ${todayFmt}`,
-          html
-        });
+        // Send email notification
+        if (emp.email) {
+          const deadlineTimeFmt = (() => {
+            const [h, m] = deadlineStr.split(':').map(Number);
+            const period = h >= 12 ? 'PM' : 'AM';
+            const hour12 = h % 12 || 12;
+            return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+          })();
+
+          const html = absentAlertTemplate({
+            employeeName      : emp.name,
+            todayDate         : todayFmt,
+            officeStartTime   : settings.officeStartTime,
+            gracePeriodMinutes: settings.lateGracePeriod || 0,
+            deadlineTime      : deadlineTimeFmt
+          });
+
+          await sendEmail({
+            to     : emp.email,
+            subject: `🚨 AttendX: You have been marked Absent — ${todayFmt}`,
+            html
+          });
+        }
       })
     );
 
-    console.log(`✅ [CRON] Absent alerts processed.`);
+    const marked  = results.filter(r => r.status === 'fulfilled').length;
+    console.log(`✅ [CRON] Absent Alert done — ${marked} employee(s) marked absent.`);
   } catch (error) {
     console.error('❌ [CRON] Error in Absent Alert Job:', error);
   }
