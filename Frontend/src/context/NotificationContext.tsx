@@ -14,7 +14,7 @@ const isValidMongoId = (id: string): boolean => {
 
 interface Notification {
   _id: string;
-  type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'check_in' | 'announcement' | 'break_alert';
+  type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'check_in' | 'announcement' | 'break_alert' | 'task_assigned' | 'task_completed';
   title: string;
   message: string;
   link: string;

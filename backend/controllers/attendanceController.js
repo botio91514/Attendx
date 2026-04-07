@@ -231,6 +231,38 @@ const checkOut = async (req, res, next) => {
     attendance._settings = settings;
     await attendance.save();
 
+    // ── Auto-pause running tasks on checkout ──────────────
+    try {
+      const Task = require("../models/Task")
+      const WorkSession = require("../models/WorkSession")
+
+      const activeTasks = await Task.find({
+        assignedTo: req.user._id,
+        status: "in-progress"
+      })
+
+      for (const task of activeTasks) {
+        const session = await WorkSession.findOne({
+          taskId: task._id,
+          endTime: null
+        })
+        if (session) {
+          session.endTime = new Date()
+          session.duration = Math.floor(
+            (session.endTime - session.startTime) / 1000
+          )
+          await session.save()
+          task.totalTime += session.duration
+        }
+        task.status = "paused"
+        await task.save()
+      }
+    } catch (taskErr) {
+      console.error("Task auto-pause error on checkout:", taskErr)
+      // Do NOT block checkout if task pause fails
+    }
+    // ─────────────────────────────────────────────────────
+
     res.status(200).json({
       success: true,
       data: {

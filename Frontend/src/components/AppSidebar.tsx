@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Clock, CalendarDays, User, LogOut, Sun, Moon,
   Users, Activity, FileText, ClipboardList, ChevronLeft, ChevronRight, Zap, UserPlus, Settings as SettingsIcon,
-  Calendar, Megaphone, CircleDollarSign, Palmtree, Coffee
+  Calendar, Megaphone, CircleDollarSign, Palmtree, Coffee, CheckSquare, BarChart2
 } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 
 const employeeNav = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { label: 'Attendance', icon: Clock, path: '/attendance' },
+  { label: 'Tasks', icon: CheckSquare, path: '/tasks' },
   { label: 'My Leaves', icon: Palmtree, path: '/leaves' },
   { label: 'Holidays', icon: CalendarDays, path: '/holidays' },
   { label: 'Notice Board', icon: Megaphone, path: '/notices' },
@@ -23,6 +24,7 @@ const adminNav = [
   { label: 'Live Status', icon: Activity, path: '/admin/live' },
   { label: 'Leave Requests', icon: ClipboardList, path: '/admin/leaves' },
   { label: 'Attendance Reports', icon: FileText, path: '/admin/reports' },
+  { label: 'Task Reports', icon: BarChart2, path: '/admin/tasks' },
   { label: 'Break Intelligence', icon: Coffee, path: '/admin/breaks' },
   { label: 'Employees', icon: Users, path: '/admin/employees' },
   { label: 'Register Employee', icon: UserPlus, path: '/admin/register' },
@@ -51,8 +53,10 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
     if (path === '/admin/leaves') markByType('leave_request');
     if (path === '/admin/live') markByType('check_in');
     if (path === '/admin/announcements') markByType('announcement');
+    if (path === '/admin/tasks') markByType('task_completed');
     if (path === '/leaves') markByType(['leave_approved', 'leave_rejected']);
     if (path === '/notices') markByType('announcement');
+    if (path === '/tasks') markByType('task_assigned');
   }, [location.pathname, markByType]);
 
   const getUnreadCountForItem = (path: string) => {
@@ -62,8 +66,10 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed, setCollapsed }) => {
     if (path === '/admin/leaves') return unread.filter(n => n.type === 'leave_request').length;
     if (path === '/admin/live') return unread.filter(n => n.type === 'check_in').length;
     if (path === '/admin/announcements') return unread.filter(n => n.type === 'announcement').length;
+    if (path === '/admin/tasks') return unread.filter(n => n.type === 'task_completed').length;
     if (path === '/leaves') return unread.filter(n => n.type === 'leave_approved' || n.type === 'leave_rejected').length;
     if (path === '/notices') return unread.filter(n => n.type === 'announcement').length;
+    if (path === '/tasks') return unread.filter(n => n.type === 'task_assigned').length;
 
     return 0;
   };

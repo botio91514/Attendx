@@ -1,6 +1,11 @@
 const express = require('express');
-const cors = require('cors');
 const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
+
+const taskRoutes = require("./routes/taskRoutes")
+const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const fs = require('fs');
@@ -8,9 +13,6 @@ const path = require('path');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, apiLimiter } = require('./middleware/rateLimiter');
-
-// Load environment variables
-dotenv.config();
 
 // Connect to Database
 connectDB();
@@ -76,6 +78,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/profile', require('./routes/profileRoutes')); // Added for Profile Management
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/payroll', require('./routes/payroll'));
+app.use('/api/tasks', taskRoutes)
 app.use('/api/export', require('./routes/exportRoutes.js'));
 
 // Root route

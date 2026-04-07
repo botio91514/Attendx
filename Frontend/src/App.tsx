@@ -24,6 +24,8 @@ import AdminHolidays from "@/pages/admin/Holidays";
 import Payroll from "@/pages/admin/Payroll";
 import AdminEmployeeProfile from "@/pages/admin/AdminEmployeeProfilePage";
 import AdminBreakHistory from "@/pages/admin/BreakHistory";
+import { TasksPage } from "@/pages/employee/TasksPage";
+import { AdminTasksPage } from "@/pages/admin/AdminTasksPage";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2 } from "lucide-react";
@@ -66,6 +68,7 @@ const AppWithAuth = () => {
               <Route path="/holidays" element={<Holidays />} />
               <Route path="/notices" element={<EmployeeNoticeBoard />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/tasks" element={<TasksPage />} />
             </Route>
 
             {/* Admin routes */}
@@ -82,6 +85,7 @@ const AppWithAuth = () => {
               <Route path="/admin/payroll" element={<Payroll />} />
               <Route path="/admin/breaks" element={<AdminBreakHistory />} />
               <Route path="/admin/register" element={<RegisterEmployee />} />
+              <Route path="/admin/tasks" element={<AdminTasksPage />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
