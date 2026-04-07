@@ -130,25 +130,25 @@ export const TasksPage: React.FC = () => {
   }
 
   const renderTaskSection = (title: string, taskList: Task[], icon: React.ReactNode, emptyMsg: string) => (
-    <div className="space-y-4 mb-10">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
+    <div className="space-y-6 mb-12">
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-inner border border-primary/20">
             {icon}
           </div>
-          <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-          <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-bold ml-1">
-            {taskList.length}
-          </Badge>
+          <div>
+            <h2 className="text-xl font-display font-bold text-foreground leading-tight">{title}</h2>
+            <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-widest">{taskList.length} {taskList.length === 1 ? 'Task' : 'Tasks'}</p>
+          </div>
         </div>
       </div>
       
       {taskList.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3 text-slate-400">
-            <ListTodo className="w-6 h-6" />
+        <div className="flex flex-col items-center justify-center p-12 glass-card border-dashed bg-secondary/10">
+          <div className="w-16 h-16 bg-secondary/30 rounded-full flex items-center justify-center mb-4 text-muted-foreground/30">
+            <ListTodo className="w-8 h-8" />
           </div>
-          <p className="text-slate-500 font-medium">{emptyMsg}</p>
+          <p className="text-muted-foreground font-medium text-sm">{emptyMsg}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -167,66 +167,68 @@ export const TasksPage: React.FC = () => {
   )
 
   return (
-    <div className="container max-w-7xl mx-auto py-8 px-4 space-y-8 min-h-screen">
+    <div className="container max-w-7xl mx-auto py-8 px-4 space-y-10 min-h-screen">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition-all duration-300">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 glass-card p-6 border-primary/10 bg-primary/5">
         <div className="space-y-1">
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Task Tracker</h1>
-          <div className="flex items-center gap-2 text-slate-500 font-medium">
-            <CalendarIcon className="w-4 h-4" />
-            <span>{format(new Date(), "EEEE, d MMMM yyyy")}</span>
+          <h1 className="text-3xl font-display font-bold tracking-tight text-foreground">Tasks Tracker</h1>
+          <div className="flex items-center gap-2 text-muted-foreground font-medium">
+            <div className="p-1 rounded-md bg-secondary flex items-center justify-center">
+              <CalendarIcon className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-sm">{format(new Date(), "EEEE, d MMMM yyyy")}</span>
           </div>
         </div>
         <Button 
           onClick={() => setShowCreateModal(true)} 
-          className="bg-primary hover:bg-primary/90 text-white font-semibold py-6 px-8 rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground font-display font-bold py-6 px-8 rounded-2xl shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] border-b-4 border-primary-foreground/20"
         >
-          <Plus className="w-5 h-5 mr-2" /> New Task
+          <Plus className="w-5 h-5 mr-2" /> CREATE TASK
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 translate-y-10">
-          <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-          <p className="text-slate-500 font-medium animate-pulse">Loading your tasks...</p>
+        <div className="flex flex-col items-center justify-center py-32">
+          <div className="relative">
+            <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+            <div className="absolute inset-0 blur-xl bg-primary/20 animate-pulse rounded-full"></div>
+          </div>
+          <p className="text-muted-foreground font-display font-medium tracking-wide">Synchronizing tasks...</p>
         </div>
       ) : tasks ? (
         <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="space-y-4"
+          className="space-y-2"
         >
           {renderTaskSection(
             "Assigned to Me", 
             tasks.assignedToMe, 
             <Users className="w-5 h-5" />, 
-            "No tasks assigned to you by others yet."
+            "No incoming tasks found."
           )}
           
-          <Separator className="my-8 opacity-50" />
-          
           {renderTaskSection(
-            "My Tasks", 
+            "My Personal Tasks", 
             tasks.myTasks, 
             <CheckCircle2 className="w-5 h-5" />, 
-            "No personal tasks created yet. Start by adding one!"
+            "Your workspace is clear. No personal tasks."
           )}
-          
-          <Separator className="my-8 opacity-50" />
 
           {renderTaskSection(
-            "Assigned by Me", 
+            "Tasks I've Delegated", 
             tasks.assignedByMe, 
             <Users className="w-5 h-5" />, 
-            "You haven't assigned any tasks to others."
+            "You haven't assigned tasks to team members yet."
           )}
         </motion.div>
       ) : (
-        <div className="text-center py-20">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium text-lg">Failed to load tasks. Please try again later.</p>
-          <Button onClick={fetchTasks} variant="outline" className="mt-4">Retry</Button>
+        <div className="text-center py-32 glass-card border-destructive/20 bg-destructive/5">
+          <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4 opacity-50" />
+          <p className="text-destructive font-bold text-lg">Connection error</p>
+          <p className="text-muted-foreground text-sm mb-6">Failed to retrieve tasks from the server.</p>
+          <Button onClick={fetchTasks} variant="outline" className="rounded-xl px-8">Try Again</Button>
         </div>
       )}
 
