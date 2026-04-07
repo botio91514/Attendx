@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CircleDollarSign, Loader2, Download, Search, Filter, AlertCircle, Info, TrendingUp, Wallet, ArrowUpRight } from 'lucide-react';
+import { CircleDollarSign, Loader2, Download, Search, Filter, AlertCircle, Info, TrendingUp, Wallet, ArrowUpRight, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { ExportButton } from '@/components/ExportButton';
+import { useAuth } from '@/context/AuthContext';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
 const Payroll: React.FC = () => {
+  const { token } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [csvLoading, setCsvLoading] = useState(false);
   const [payroll, setPayroll] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalPayout: 0,
@@ -50,6 +53,27 @@ const Payroll: React.FC = () => {
     fetchPayroll();
   }, [filters.month, filters.year]);
 
+  const handlePayrollCSV = async () => {
+    try {
+      setCsvLoading(true);
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      const response = await fetch(
+        `${API_URL}/export/payroll/all/csv?month=${filters.month}&year=${filters.year}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payroll_${filters.year}_${filters.month}.csv`;
+      document.body.appendChild(a); a.click();
+      window.URL.revokeObjectURL(url); a.remove();
+      toast.success('Payroll CSV downloaded!');
+    } catch { toast.error('Failed to export CSV'); }
+    finally { setCsvLoading(false); }
+  };
+
   const filtered = payroll.filter(p => 
     p.name.toLowerCase().includes(filters.search.toLowerCase()) ||
     p.employeeId.toLowerCase().includes(filters.search.toLowerCase())
@@ -73,7 +97,7 @@ const Payroll: React.FC = () => {
               {Array.from({length: 12}, (_, i) => {
                 const m = (i + 1).toString().padStart(2, '0');
                 const name = new Date(2000, i).toLocaleString('default', { month: 'long' });
-                return <option key={m} value={m}>{name}</option>
+                return <option key={m} value={m}>{name}</option>;
               })}
            </select>
            <select 
@@ -83,8 +107,13 @@ const Payroll: React.FC = () => {
            >
               {['2024', '2025', '2026'].map(y => <option key={y} value={y}>{y}</option>)}
            </select>
-           <button className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-              <Download className="w-5 h-5" />
+           <button
+             onClick={handlePayrollCSV}
+             disabled={csvLoading}
+             title="Download Payroll CSV"
+             className="p-2.5 rounded-xl bg-success/10 text-success hover:bg-success/20 transition-colors"
+           >
+             {csvLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
            </button>
         </div>
       </motion.div>

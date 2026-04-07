@@ -2,19 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getStatusColor } from '@/utils/statusUtils';
 import EmptyState from '@/components/EmptyState';
-import { Check, X, Loader2 } from 'lucide-react';
+import { Check, X, Loader2, Download, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { ExportButton } from '@/components/ExportButton';
 import { useNotifications } from '@/context/NotificationContext';
+import { useAuth } from '@/context/AuthContext';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 const tabs = ['Pending', 'Approved', 'Rejected', 'All'] as const;
 
 const LeaveRequests: React.FC = () => {
   const { fetchNotifications } = useNotifications();
+  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>('Pending');
   const [loading, setLoading] = useState(true);
+  const [csvLoading, setCsvLoading] = useState(false);
   const [leaves, setLeaves] = useState<any[]>([]);
   const [exportRange, setExportRange] = useState({from: new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0], to: new Date().toISOString().split('T')[0]});
   const [exportEmp, setExportEmp] = useState('');
@@ -39,6 +42,26 @@ const LeaveRequests: React.FC = () => {
   useEffect(() => {
     fetchLeaves();
   }, []);
+
+  const handleBulkLeaveCSV = async () => {
+    try {
+      setCsvLoading(true);
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${API_URL}/export/leave/all/csv?from=${exportRange.from}&to=${exportRange.to}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('CSV Export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leave_report_${exportRange.from}_to_${exportRange.to}.csv`;
+      document.body.appendChild(a); a.click();
+      window.URL.revokeObjectURL(url); a.remove();
+      toast.success('Leave CSV downloaded!');
+    } catch { toast.error('Failed to export CSV'); }
+    finally { setCsvLoading(false); }
+  };
 
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
     try {
@@ -92,7 +115,15 @@ const LeaveRequests: React.FC = () => {
                  <option key={emp._id} value={emp._id}>{emp.name}</option>
               ))}
            </select>
-           <ExportButton type="leave" employeeId={exportEmp} dateRange={exportRange} label="Export PDF" />
+           <ExportButton type="leave" employeeId={exportEmp} dateRange={exportRange} label="Employee PDF" />
+           <button
+             onClick={handleBulkLeaveCSV}
+             disabled={csvLoading}
+             className="glow-button flex items-center gap-2 text-sm py-2 px-3"
+           >
+             {csvLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+             Bulk CSV
+           </button>
         </div>
       </motion.div>
 

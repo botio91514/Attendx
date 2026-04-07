@@ -3,6 +3,8 @@ const {
   exportAttendancePDF,
   exportAllAttendancePDF,
   exportAttendanceCSV,
+  exportBulkLeaveCSV,
+  exportBulkPayrollCSV,
   exportPayslipPDF,
   exportLeavePDF
 } = require('../controllers/exportController.js');
@@ -20,8 +22,14 @@ router.get('/attendance/:employeeId', exportAttendancePDF);
 router.get('/payslip/:employeeId', exportPayslipPDF);
 router.get('/leave/:employeeId', exportLeavePDF);
 
-// Bulk exports (all employees)
+// Bulk exports
 router.get('/attendance/all/bulk', exportAllAttendancePDF);
 router.get('/attendance/all/csv', exportAttendanceCSV);
+
+// Bulk Leave exports
+router.get('/leave/all/csv', exportBulkLeaveCSV);
+
+// Bulk Payroll exports
+router.get('/payroll/all/csv', exportBulkPayrollCSV);
 
 module.exports = router;

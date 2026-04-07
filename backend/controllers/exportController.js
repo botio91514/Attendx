@@ -261,10 +261,117 @@ const exportAttendanceCSV = async (req, res) => {
   }
 };
 
+// 6. Bulk Leave CSV
+const exportBulkLeaveCSV = async (req, res) => {
+  try {
+    const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const to = req.query.to || new Date().toISOString().split('T')[0];
+
+    const leaves = await Leave.find({
+      createdAt: { $gte: new Date(from), $lte: new Date(to + 'T23:59:59.999Z') }
+    }).populate('userId', 'name employeeId department role').sort({ createdAt: -1 });
+
+    const filtered = leaves.filter(l => l.userId?.role !== 'admin');
+
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const fmtDate = (d) => {
+      if (!d) return 'N/A';
+      const dt = new Date(d);
+      return `${String(dt.getDate()).padStart(2,'0')}-${MONTH_NAMES[dt.getMonth()]}-${dt.getFullYear()}`;
+    };
+
+    const headers = ['Employee Name','Employee ID','Department','Leave Type','Start Date','End Date','Total Days','Reason','Status','Applied On'];
+    const rows = filtered.map(l => [
+      l.userId?.name || 'N/A',
+      l.userId?.employeeId || 'N/A',
+      l.userId?.department || 'N/A',
+      (l.leaveType || 'N/A').toUpperCase(),
+      fmtDate(l.startDate),
+      fmtDate(l.endDate),
+      l.totalDays || 'N/A',
+      (l.reason || 'N/A').replace(/"/g, "'"),
+      (l.status || 'N/A').toUpperCase(),
+      fmtDate(l.createdAt)
+    ].map(f => `"${f}"`).join(','));
+
+    const bom = '\uFEFF';
+    const csv = bom + [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="leave_report_${from}_to_${to}.csv"`);
+    res.status(200).send(csv);
+  } catch (err) {
+    console.error('Bulk Leave CSV Error:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate leave CSV' });
+  }
+};
+
+// 7. Bulk Payroll CSV
+const exportBulkPayrollCSV = async (req, res) => {
+  try {
+    const month  = parseInt(req.query.month  || new Date().getMonth() + 1);
+    const year   = parseInt(req.query.year   || new Date().getFullYear());
+    const { startStr, endStr } = getMonthRange(year, month);
+
+    const employees = await User.find({ role: 'employee', isActive: true })
+      .select('name employeeId department baseSalary');
+
+    const holidays = await Holiday.find({ date: { $gte: new Date(startStr), $lte: new Date(endStr) } });
+    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
+
+    let totalWorkingDays = 0;
+    let tempDate = new Date(startStr);
+    while (tempDate <= new Date(endStr)) {
+      const day = tempDate.getDay();
+      if (day !== 0 && day !== 6 && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
+      tempDate.setDate(tempDate.getDate() + 1);
+    }
+
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const headers = ['Employee Name','Employee ID','Department','Month/Year','Base Salary','Working Days','Present Days','Half Days','Absent Days','Daily Rate','Net Payable Days','Gross Salary'];
+
+    const rows = [];
+    for (const emp of employees) {
+      const attendance = await Attendance.find({ userId: emp._id, date: { $gte: startStr, $lte: endStr } });
+      let present = 0, halfDay = 0, late = 0;
+      attendance.forEach(r => {
+        if (r.status === 'present') present++;
+        else if (r.status === 'late') { present++; late++; }
+        else if (r.status === 'half-day') halfDay++;
+      });
+      const absent = totalWorkingDays - present - halfDay;
+      const payableDays = present + (halfDay * 0.5);
+      const dailyRate  = totalWorkingDays > 0 ? (emp.baseSalary || 0) / totalWorkingDays : 0;
+      const grossSalary = Math.round(payableDays * dailyRate);
+
+      rows.push([
+        emp.name, emp.employeeId, emp.department || 'N/A',
+        `${monthNames[month-1]} ${year}`,
+        `${emp.baseSalary || 0}`,
+        totalWorkingDays, present, halfDay, Math.max(0, absent),
+        `${Math.round(dailyRate)}`,
+        payableDays, grossSalary
+      ].map(f => `"${f}"`).join(','));
+    }
+
+    const bom = '\uFEFF';
+    const csv = bom + [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="payroll_${monthNames[month-1]}_${year}.csv"`);
+    res.status(200).send(csv);
+  } catch (err) {
+    console.error('Bulk Payroll CSV Error:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate payroll CSV' });
+  }
+};
+
 module.exports = {
   exportAttendancePDF,
   exportAllAttendancePDF,
   exportAttendanceCSV,
+  exportBulkLeaveCSV,
+  exportBulkPayrollCSV,
   exportPayslipPDF,
   exportLeavePDF
 };
