@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import StatCard from '@/components/StatCard';
-import { Users, UserCheck, Palmtree, AlertTriangle, Loader2, Calendar, CircleDollarSign, Clock, Activity, ClipboardList } from 'lucide-react';
+import { Users, UserCheck, Palmtree, AlertTriangle, Loader2, Calendar, Clock, Activity, ClipboardList, CalendarClock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '@/lib/api';
 
@@ -18,7 +18,8 @@ const AdminOverview: React.FC = () => {
     presentRate: '0%',
     leaveRate: '0%',
     lateRate: '0%',
-    totalPayout: 0,
+    pendingLeaves: 0,
+    onLeaveToday: 0,
     isHoliday: false,
     holidayTitle: ''
   });
@@ -32,11 +33,10 @@ const AdminOverview: React.FC = () => {
       const month = (now.getMonth() + 1).toString().padStart(2, '0');
       const year = now.getFullYear().toString();
 
-      const [empRes, attendanceRes, holidayRes, payrollRes, checkinRes, leavesRes] = await Promise.all([
+      const [empRes, attendanceRes, holidayRes, checkinRes, leavesRes] = await Promise.all([
         api.get('/employees'),
         api.get('/attendance/admin/stats'),
         api.get('/holidays'),
-        api.get(`/payroll/admin/summary?month=${month}&year=${year}`),
         api.get(`/attendance/admin/all?date=${now.toISOString().split('T')[0]}&limit=50`),
         api.get('/leave/admin/all')
       ]);
@@ -54,11 +54,23 @@ const AdminOverview: React.FC = () => {
          setRecentCheckins(staffOnly);
       }
 
+      let pendingLeavesCount = 0;
+      let onLeaveTodayCount = 0;
       if (leavesRes.success && leavesRes.data && Array.isArray(leavesRes.data.leaves)) {
-         const pending = leavesRes.data.leaves
+         const allLeaves = leavesRes.data.leaves;
+         const pending = allLeaves
             .filter((l: any) => l.status === 'pending')
             .sort((a: any, b: any) => new Date(b.createdAt || new Date()).getTime() - new Date(a.createdAt || new Date()).getTime())
             .slice(0, 5);
+         pendingLeavesCount = allLeaves.filter((l: any) => l.status === 'pending').length;
+         // Count employees on approved leave today
+         const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+         onLeaveTodayCount = allLeaves.filter((l: any) => {
+           if (l.status !== 'approved') return false;
+           const start = l.startDate?.split('T')[0];
+           const end = l.endDate?.split('T')[0];
+           return start <= todayStr && todayStr <= end;
+         }).length;
          setPendingLeaves(pending);
       }
 
@@ -74,24 +86,32 @@ const AdminOverview: React.FC = () => {
       }
 
       if (attendanceRes.success && attendanceRes.data && attendanceRes.data.stats) {
-        const { present = 0, absent = 0, late = 0, halfDay = 0 } = attendanceRes.data.stats;
+        const { present = 0, absent = 0, late = 0, halfDay = 0, notCheckedIn = 0 } = attendanceRes.data.stats;
         const presentToday = present + late + halfDay;
         const lateToday = late;
 
-        let totalPayout = 0;
-        if (payrollRes.success && payrollRes.data) {
-          payrollRes.data.payroll.forEach((p: any) => totalPayout += p.calculations.grossSalary);
+        // Fallback: compute absent from attendance list directly
+        // This catches timezone issues where backend returns 0
+        let absentCount = absent;
+        if (absentCount === 0 && checkinRes.success && checkinRes.data?.attendance) {
+          const checkedInIds = new Set(
+            checkinRes.data.attendance
+              .filter((r: any) => r.checkIn && r.userId?.role !== 'admin')
+              .map((r: any) => r.userId?._id || r.userId)
+          );
+          absentCount = Math.max(0, totalEmp - checkedInIds.size - onLeaveTodayCount);
         }
 
         setStats({
           totalEmployees: totalEmp,
           presentToday: presentToday,
-          onLeave: isHoliday ? 0 : absent,
+          onLeave: isHoliday ? 0 : absentCount,
           lateToday: late,
           presentRate: totalEmp > 0 ? `${((presentToday / totalEmp) * 100).toFixed(1)}%` : '0%',
-          leaveRate: (totalEmp > 0 && !isHoliday) ? `${((absent / totalEmp) * 100).toFixed(1)}%` : '0%',
+          leaveRate: (totalEmp > 0 && !isHoliday) ? `${((absentCount / totalEmp) * 100).toFixed(1)}%` : '0%',
           lateRate: totalEmp > 0 ? `${((late / totalEmp) * 100).toFixed(1)}%` : '0%',
-          totalPayout,
+          pendingLeaves: pendingLeavesCount,
+          onLeaveToday: onLeaveTodayCount,
           isHoliday,
           holidayTitle
         });
@@ -139,7 +159,13 @@ const AdminOverview: React.FC = () => {
         <StatCard icon={<UserCheck />} label="Present Today" value={stats.presentToday?.toString() || '0'} subtitle={stats.presentRate} accentClass="text-success" />
         <StatCard icon={<Palmtree />} label="Absentees" value={stats.onLeave?.toString() || '0'} subtitle={stats.leaveRate} accentClass="text-warning" />
         <StatCard icon={<AlertTriangle />} label="Late Today" value={stats.lateToday?.toString() || '0'} subtitle={stats.lateRate} accentClass="text-destructive" />
-        <StatCard icon={<CircleDollarSign />} label="Est. Payout" value={`₹${stats.totalPayout.toLocaleString()}`} subtitle="Current Month" accentClass="text-purple-500" />
+        <StatCard
+          icon={<CalendarClock />}
+          label="On Leave Today"
+          value={stats.onLeaveToday?.toString() || '0'}
+          subtitle={stats.pendingLeaves > 0 ? `${stats.pendingLeaves} pending approval` : 'No pending requests'}
+          accentClass="text-purple-500"
+        />
       </motion.div>
 
       <motion.div variants={fadeUp} className="mt-8">

@@ -3,6 +3,8 @@ const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const Leave = require('../models/Leave');
 const Settings = require('../models/Settings');
+const Task = require('../models/Task');
+const WorkSession = require('../models/WorkSession');
 const { sendEmail } = require('../utils/emailService');
 const { checkoutReminderTemplate, absentAlertTemplate } = require('../utils/emailTemplates');
 
@@ -402,6 +404,37 @@ const startAutoCheckoutJob = () => {
           
           record._settings = settings; 
           await record.save();
+
+          // ── Auto-pause any in-progress tasks for this user ──────
+          try {
+            const activeTasks = await Task.find({
+              assignedTo: record.userId,
+              status: 'in-progress'
+            });
+
+            for (const task of activeTasks) {
+              const session = await WorkSession.findOne({
+                taskId: task._id,
+                endTime: null
+              });
+              if (session) {
+                // Cap the session at the office end time (not current time)
+                session.endTime = checkoutDate;
+                session.duration = Math.max(
+                  0,
+                  Math.floor((session.endTime - session.startTime) / 1000)
+                );
+                await session.save();
+                task.totalTime += session.duration;
+              }
+              task.status = 'paused';
+              await task.save();
+              console.log(`⏸️ [CRON] Auto-paused task "${task.title}" for user ${record.userId}`);
+            }
+          } catch (taskErr) {
+            console.error('⚠️ [CRON] Task auto-pause failed during auto-checkout:', taskErr);
+          }
+          // ────────────────────────────────────────────────────────
         })
       );
 

@@ -113,6 +113,41 @@ exports.getMyTasks = async (req, res, next) => {
         .populate("assignedTo", populateFields)
     ])
 
+    const Attendance = require("../models/Attendance")
+    const todayForGuard = getTodayDate()
+
+    // ── Safety Guard: close stale open sessions on fetch ───────────
+    // If a session has no endTime but the user already checked out today,
+    // it means auto-checkout or manual checkout missed the task pause.
+    // Cap it at checkout time so the timer doesn't show 15+ hours.
+    const todayAttendance = await Attendance.findOne({
+      userId,
+      date: todayForGuard,
+      checkOut: { $exists: true, $ne: null }
+    })
+
+    if (todayAttendance?.checkOut) {
+      // Find all open sessions for this user
+      const staleSessions = await WorkSession.find({ userId, endTime: null })
+      for (const session of staleSessions) {
+        session.endTime = todayAttendance.checkOut
+        session.duration = Math.max(
+          0,
+          Math.floor((session.endTime - session.startTime) / 1000)
+        )
+        await session.save()
+        // Also update the task totalTime and mark as paused
+        const staleTask = await Task.findById(session.taskId)
+        if (staleTask && staleTask.status === 'in-progress') {
+          staleTask.totalTime += session.duration
+          staleTask.status = 'paused'
+          await staleTask.save()
+          console.log(`⏸️ [Guard] Closed stale session for task "${staleTask.title}"`)
+        }
+      }
+    }
+    // ────────────────────────────────────────────────────────────────
+
     const attachSessions = async (tasks) => {
       return await Promise.all(tasks.map(async (task) => {
         const sessions = await WorkSession.find({ taskId: task._id })
@@ -144,6 +179,7 @@ exports.getMyTasks = async (req, res, next) => {
     next(error)
   }
 }
+
 
 // ─────────────────────────────────────────────
 // FUNCTION 3: startTask

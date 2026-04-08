@@ -127,7 +127,7 @@ const checkIn = async (req, res, next) => {
         sender: userId,
         type: 'check_in',
         title: attendance.status === 'late' ? 'Late Check-in' : 'New Check-in',
-        message: `${req.user.name} checked in at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${attendance.status.toUpperCase()})`,
+        message: `${req.user.name} checked in at ${now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} (${attendance.status.toUpperCase()})`,
         link: '/admin/live',
         targetRole: 'admin'
       }));
@@ -852,9 +852,10 @@ const getTodayStats = async (req, res, next) => {
     // Calculate not checked in
     stats.notCheckedIn = totalEmployees - stats.checkedInCount;
 
-    // Check if today is a working day
+    // 🛠️ Use IST day-of-week (fixes UTC server returning wrong day)
+    const nowIST = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
     const settings = await Settings.getSettings();
-    const todayDay = new Date().getDay(); // 0-6
+    const todayDay = nowIST.getUTCDay(); // 0=Sun,1=Mon...6=Sat in IST
     const isWorkingDay = settings.workingDays.includes(todayDay);
 
     // Absent = (Those who didn't check in) - (Those on official leave)
@@ -873,6 +874,7 @@ const getTodayStats = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Validation rules
 const checkInValidation = [];
