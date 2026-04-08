@@ -19,67 +19,44 @@ connectDB();
 
 const app = express();
 
-// Trust proxy for Render/Cloud hosting (required for express-rate-limit)
-app.set('trust proxy', 1);
-
-// Static files for uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-/**
- * 🛡️ CORS Configuration (MUST BE FIRST)
- */
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:8080',
-  'https://gatistwamhrms.netlify.app'
-];
-
+// 1. CORS - MUST BE VERY FIRST
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin matches or ends with netlify.app
-    const isAllowed = allowedOrigins.includes(origin.replace(/\/$/, '')) || 
-                     origin.includes('netlify.app') || 
-                     origin.includes('localhost');
-                     
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.warn(`⚠️ CORS blocked: ${origin}`);
-      callback(null, true); // Allow it anyway in troubleshooting mode 
-    }
-  },
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'https://gatistwamhrms.netlify.app'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }));
 
-// Handle preflight for all routes
+// Handle preflight
 app.options('*', cors());
 
-// Initialize remaining middleware
-app.use(cookieParser());
+// 2. Security & Proxies
+app.set('trust proxy', 1);
+
+// 3. Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
+// 4. Static Files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// 5. Rate Limiting (Moved after CORS/Parsers)
+app.use(generalLimiter);
 
 // Ensure upload directories exist on startup
 const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('📁 Profile photo upload directory created');
 }
-
-
-
-// Rate Limiting
-app.use(generalLimiter);
 
 /**
  * Routes
  */
-// Mount specific route files
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/authRefresh'));
 app.use('/api/attendance', require('./routes/attendance'));
@@ -89,21 +66,16 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/holidays', require('./routes/holidays'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/profile', require('./routes/profileRoutes')); // Added for Profile Management
-app.use('/api/settings', require('./routes/settings'));
+app.use('/api/profile', require('./routes/profileRoutes'));
 app.use('/api/payroll', require('./routes/payroll'));
-app.use('/api/tasks', taskRoutes)
+app.use('/api/tasks', taskRoutes);
 app.use('/api/export', require('./routes/exportRoutes.js'));
 
 // Root route
 app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Attendance & Leave Management API is running',
-    version: '1.0.0',
-    env: process.env.NODE_ENV
-  });
+  res.status(200).json({ success: true, message: 'API Running' });
 });
+
 
 // Health check endpoint (used by keep-alive)
 app.get('/api/health', (req, res) => {

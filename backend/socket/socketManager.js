@@ -6,19 +6,15 @@ let io; // singleton instance
 
 // Initialize Socket.io with existing HTTP server
 const initializeSocket = (httpServer) => {
-  const HARDCODED_ORIGINS = [
+  const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:8080',
     'https://gatistwamhrms.netlify.app'
   ];
-  const envOrigins = process.env.FRONTEND_URL
-    ? process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''))
-    : [];
-  const socketOrigins = [...new Set([...HARDCODED_ORIGINS, ...envOrigins])];
 
   io = new Server(httpServer, {
     cors: {
-      origin: socketOrigins,
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
       credentials: true
     },
@@ -30,6 +26,7 @@ const initializeSocket = (httpServer) => {
     cookie: false,
     transports: ['websocket', 'polling'], // fallback to polling if websocket fails
   });
+
 
 
   // ===  AUTHENTICATION MIDDLEWARE ===
