@@ -21,26 +21,23 @@ const { initializeSocket } = require('./socket/socketManager.js');
 
 const app = express();
 
-// 1. MANUAL CORS HEADERS (FOOLPROOF)
+// 1. MANUAL CORS HEADERS (ULTRA AGGRESSIVE)
 app.use((req, res, next) => {
-  const allowed = [
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'https://gatistwamhrms.netlify.app'
-  ];
-  const origin = req.headers.origin;
-  if (allowed.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+  const origin = req.headers.origin || 'https://gatistwamhrms.netlify.app';
+  
+  // Always set these headers for every request
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   
+  // Immediately respond to preflight
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+    return res.status(200).end();
   }
   next();
 });
+
 
 // 2. Proxies & Parsers
 app.set('trust proxy', 1);
