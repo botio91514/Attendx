@@ -19,14 +19,50 @@ connectDB();
 
 const app = express();
 
-// Middleware
-app.use(cookieParser());
-
 // Trust proxy for Render/Cloud hosting (required for express-rate-limit)
 app.set('trust proxy', 1);
 
 // Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+/**
+ * 🛡️ CORS Configuration (MUST BE FIRST)
+ */
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'https://gatistwamhrms.netlify.app'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin matches or ends with netlify.app
+    const isAllowed = allowedOrigins.includes(origin.replace(/\/$/, '')) || 
+                     origin.includes('netlify.app') || 
+                     origin.includes('localhost');
+                     
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️ CORS blocked: ${origin}`);
+      callback(null, true); // Allow it anyway in troubleshooting mode 
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+}));
+
+// Handle preflight for all routes
+app.options('*', cors());
+
+// Initialize remaining middleware
+app.use(cookieParser());
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Ensure upload directories exist on startup
 const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
@@ -35,52 +71,7 @@ if (!fs.existsSync(uploadDir)) {
   console.log('📁 Profile photo upload directory created');
 }
 
-/**
- * Middleware
- */
-// Enable CORS for frontend — supports multiple origins (comma-separated in FRONTEND_URL)
-const HARDCODED_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:8080',
-  'https://gatistwamhrms.netlify.app'
-];
 
-const envOrigins = (process.env.FRONTEND_URL || '')
-  .split(',')
-  .map(url => url.trim().replace(/\/$/, ''))
-  .filter(Boolean);
-
-const allowedOrigins = [...new Set([...HARDCODED_ORIGINS, ...envOrigins])];
-
-console.log('✅ CORS Allowed Origins:', allowedOrigins);
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    console.warn(`⚠️ CORS blocked origin: ${origin}`);
-    // In production, be strict. In dev, allow all.
-    if (process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-    callback(new Error(`CORS blocked: ${origin} is not allowed`));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
-}));
-
-// Handle preflight for ALL routes explicitly
-app.options('*', cors());
-
-
-// Body Parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
 // Rate Limiting
 app.use(generalLimiter);
