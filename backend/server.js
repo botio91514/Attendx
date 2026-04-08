@@ -32,8 +32,15 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow if no origin (core tools) or matches our list
-    if (!origin || allowedOrigins.some(o => origin.startsWith(o))) {
+    // Allow if no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in our allowed list or is a Netlify preview/local
+    const isAllowed = allowedOrigins.some(o => origin.startsWith(o)) || 
+                     origin.endsWith('netlify.app') || 
+                     origin.includes('localhost');
+
+    if (isAllowed) {
       callback(null, true);
     } else {
       callback(null, false);
@@ -41,11 +48,10 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 
-// Handle preflight requests
-app.options('*', cors());
 
 // 3. Other Middleware
 app.use(cookieParser());
