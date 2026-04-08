@@ -6,11 +6,21 @@ let io; // singleton instance
 
 // Initialize Socket.io with existing HTTP server
 const initializeSocket = (httpServer) => {
+  const HARDCODED_ORIGINS = [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'https://gatistwamhrms.netlify.app'
+  ];
+  const envOrigins = process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''))
+    : [];
+  const socketOrigins = [...new Set([...HARDCODED_ORIGINS, ...envOrigins])];
+
   io = new Server(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(u => u.trim()) : '*',
+      origin: socketOrigins,
       methods: ['GET', 'POST'],
-      credentials: true  // needed for HTTP-only cookies
+      credentials: true
     },
     // Reconnection & stability settings
     pingTimeout: 60000,
@@ -18,8 +28,9 @@ const initializeSocket = (httpServer) => {
     upgradeTimeout: 30000,
     allowUpgrades: true,
     cookie: false,
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'], // fallback to polling if websocket fails
   });
+
 
   // ===  AUTHENTICATION MIDDLEWARE ===
   // Validate JWT before allowing socket connection

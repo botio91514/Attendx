@@ -39,21 +39,44 @@ if (!fs.existsSync(uploadDir)) {
  * Middleware
  */
 // Enable CORS for frontend — supports multiple origins (comma-separated in FRONTEND_URL)
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:8080')
+const HARDCODED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'https://gatistwamhrms.netlify.app'
+];
+
+const envOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
-  .map(url => url.trim().replace(/\/$/, ''));
+  .map(url => url.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+const allowedOrigins = [...new Set([...HARDCODED_ORIGINS, ...envOrigins])];
+
+console.log('✅ CORS Allowed Origins:', allowedOrigins);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
+    // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+    console.warn(`⚠️ CORS blocked origin: ${origin}`);
+    // In production, be strict. In dev, allow all.
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
     callback(new Error(`CORS blocked: ${origin} is not allowed`));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200
 }));
+
+// Handle preflight for ALL routes explicitly
+app.options('*', cors());
+
 
 // Body Parser
 app.use(express.json());
