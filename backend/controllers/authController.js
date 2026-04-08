@@ -26,7 +26,7 @@ const register = async (req, res, next) => {
       });
     }
 
-    const { name, email, password, department, designation, role, baseSalary, employeeId } = req.body;
+    const { name, email, password, department, designation, role, baseSalary, employeeId, phone } = req.body;
 
     // Check if user already exists
     const userExists = await User.findOne({ email });
@@ -51,6 +51,7 @@ const register = async (req, res, next) => {
       role: role || 'employee',
       ...(baseSalary != null && { baseSalary }),
       ...(employeeId && { employeeId }),
+      ...(phone && { phone }),
     });
 
     // --- EMAIL NOTIFICATION (ADDED) ---
@@ -104,7 +105,7 @@ const forgotPassword = async (req, res, next) => {
 
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    
+
     // Hash and store
     const salt = await bcrypt.genSalt(10);
     user.resetToken = await bcrypt.hash(resetToken, salt);
@@ -113,7 +114,7 @@ const forgotPassword = async (req, res, next) => {
 
     // Send Email
     const resetUrl = (process.env.CLIENT_URL || 'http://localhost:5173') + '/reset-password?token=' + resetToken;
-    
+
     sendEmail({
       to: user.email,
       subject: '🔑 AttendX Password Reset Request',
@@ -143,7 +144,7 @@ const resetPassword = async (req, res, next) => {
 
     // Find all users with active tokens (minimal set)
     const users = await User.find({ resetTokenExpiry: { $gt: Date.now() } }).select('+resetToken');
-    
+
     let targetUser = null;
     for (const u of users) {
       const isMatch = await bcrypt.compare(token, u.resetToken);
@@ -229,8 +230,8 @@ const login = async (req, res, next) => {
 
     // Refresh Token logic
     const refreshExpiry = rememberMe ? '30d' : '1d';
-    const refreshExpiryMs = rememberMe 
-      ? 30 * 24 * 60 * 60 * 1000 
+    const refreshExpiryMs = rememberMe
+      ? 30 * 24 * 60 * 60 * 1000
       : 24 * 60 * 60 * 1000;
 
     const refreshToken = jwt.sign(

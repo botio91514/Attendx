@@ -35,7 +35,7 @@ const getPayrollSummary = async (req, res, next) => {
     let tempDate = new Date(startDate);
     while (tempDate <= endDate) {
       const day = tempDate.getDay();
-      const isWeekend = (day === 0 || day === 6); // Sun or Sat
+      const isWeekend = (day === 0); // Only Sunday is weekend (0)
       const isHoliday = holidayDates.includes(tempDate.toISOString().split('T')[0]);
       
       if (!isWeekend && !isHoliday) {
@@ -130,7 +130,7 @@ const finalizePayroll = async (req, res, next) => {
     let tempDate = new Date(startDate);
     while (tempDate <= endDate) {
       const day = tempDate.getDay();
-      if (day !== 0 && day !== 6 && !holidayDates.includes(tempDate.toISOString().split('T')[0])) {
+      if (day !== 0 && !holidayDates.includes(tempDate.toISOString().split('T')[0])) {
         totalWorkingDays++;
       }
       tempDate.setDate(tempDate.getDate() + 1);
