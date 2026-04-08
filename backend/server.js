@@ -19,23 +19,10 @@ connectDB();
 
 const app = express();
 
-// Middleware
-app.use(cookieParser());
-
-// Trust proxy for Render/Cloud hosting (required for express-rate-limit)
+// 1. Trust proxy for Render/Cloud hosting
 app.set('trust proxy', 1);
 
-// Static files for uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Ensure upload directories exist on startup
-const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('📁 Profile photo upload directory created');
-}
-
-// Enable CORS
+// 2. Enable CORS - MUST be before routes and other middleware
 const allowedOrigins = [
   'https://gatistwamhrms.netlify.app',
   'http://localhost:8080',
@@ -45,36 +32,37 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    
-    // Check if the origin is allowed
-    const isAllowed = allowedOrigins.some(allowedOrigin => {
-      return origin.startsWith(allowedOrigin);
-    });
-
-    if (isAllowed) {
+    // Allow if no origin (core tools) or matches our list
+    if (!origin || allowedOrigins.some(o => origin.startsWith(o))) {
       callback(null, true);
     } else {
-      console.error(`CORS blocked for origin: ${origin}`);
       callback(null, false);
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
 // Handle preflight requests
 app.options('*', cors());
 
-
-// Body Parser
+// 3. Other Middleware
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-
-// Rate Limiting
 app.use(generalLimiter);
+
+// 4. Static files for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Ensure upload directories exist on startup
+const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('📁 Profile photo upload directory created');
+}
+
 
 /**
  * Routes
