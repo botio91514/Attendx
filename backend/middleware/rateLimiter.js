@@ -5,7 +5,7 @@ const rateLimit = require('express-rate-limit');
  */
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10000, // Very high for development
+  max: 10000, 
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 1 minute',
@@ -13,6 +13,7 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true, 
   legacyHeaders: false, 
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 /**
@@ -29,6 +30,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, 
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 /**
@@ -44,6 +46,7 @@ const apiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 module.exports = {

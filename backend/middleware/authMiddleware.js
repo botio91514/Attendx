@@ -5,6 +5,11 @@ const User = require('../models/User');
  * Middleware to protect routes - verifies JWT token
  */
 const protect = async (req, res, next) => {
+  // Allow preflight requests to pass through
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   try {
     let token;
 

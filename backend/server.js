@@ -19,44 +19,78 @@ connectDB();
 
 const app = express();
 
-// 1. Trust proxy for Render/Cloud hosting
-app.set('trust proxy', 1);
+// --- 1. DEBUG LOGGING MIDDLEWARE ---
+// Logs every incoming request with its Origin for CORS troubleshooting
+app.use((req, res, next) => {
+  const origin = req.headers.origin || 'No Origin';
+  const method = req.method;
+  const url = req.url;
+  console.log(`[${new Date().toISOString()}] ${method} ${url} - Origin: ${origin}`);
+  next();
+});
 
-// 2. Enable CORS - MUST be before routes and other middleware
-const allowedOrigins = [
+// --- 2. CORS CONFIGURATION ---
+// Normalizing allowed origins (trimming and removing trailing slashes)
+const normalizeOrigin = (url) => {
+  if (!url) return null;
+  return url.trim().replace(/\/+$/, '');
+};
+
+const rawOrigins = [
   process.env.CLIENT_URL,
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : []),
   'https://gatistwamhrms.netlify.app',
   'http://localhost:8080',
   'http://localhost:5173',
   'http://localhost:3000'
-].filter(Boolean); // removes undefined values
+];
 
-app.use(cors({
+const allowedOrigins = [...new Set(rawOrigins.map(normalizeOrigin).filter(Boolean))];
+
+console.log('✅ [CORS] Allowed Origins:', allowedOrigins);
+
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl)
+    // 1. Allow mobile apps, Postman, etc. (no origin)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.includes(origin)) {
+    // 2. Normalize incoming origin for comparison
+    const normalizedOrigin = normalizeOrigin(origin);
+    
+    // 3. Check if allowed
+    if (allowedOrigins.includes(normalizedOrigin)) {
       callback(null, true);
     } else {
-      console.error(`[CORS] Blocked request from: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      console.warn(`[CORS] Blocked Origin: ${origin} (Not in allowed list)`);
+      // Use null instead of Error to avoid triggering error handler without headers
+      callback(null, false);
     }
   },
-  credentials: true, // needed for cookies (refresh token)
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'X-CSRF-Token',
-    'X-Requested-With',
-    'Accept',
-    'Origin'
-  ]
-}));
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Accept', 
+    'Origin',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  exposedHeaders: ['Set-Cookie'], 
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
 
-// Handle preflight requests for ALL routes
-app.options('*', cors());
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Explicitly handle OPTIONS for all routes
+app.options('*', cors(corsOptions));
+
+// 3. Trust proxy for Render/Cloud hosting
+app.set('trust proxy', 1);
 
 
 
@@ -144,20 +178,20 @@ const server = httpServer.listen(PORT, () => {
 
   // 🏆 Render Anti-Sleep Integration
   if (process.env.NODE_ENV === 'production') {
-    const RENDER_URL = process.env.RENDER_EXTERNAL_URL ||
-      process.env.CLIENT_URL?.replace('netlify.app', 'onrender.com');
+    // Correctly target the backend URL on Render
+    const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://attendx-backend-kz6g.onrender.com';
     
-    if (RENDER_URL) {
+    if (RENDER_EXTERNAL_URL) {
       setInterval(async () => {
         try {
           const https = require('https');
-          https.get(`${RENDER_URL}/api/health`, (res) => {
-             console.log(`Keep-alive ping sent: ${res.statusCode}`);
+          https.get(`${RENDER_EXTERNAL_URL}/api/health`, (res) => {
+             console.log(`[Keep-Alive] Ping sent to ${RENDER_EXTERNAL_URL} - Status: ${res.statusCode}`);
           });
         } catch (err) {
-          console.error('Keep-alive failed:', err.message);
+          console.error('[Keep-Alive] Failed:', err.message);
         }
-      }, 14 * 60 * 1000); // every 14 minutes
+      }, 13 * 60 * 1000); // 13 minutes (Render sleeps after 15)
     }
   }
 });
