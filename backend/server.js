@@ -13,42 +13,48 @@ const path = require('path');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const { createServer } = require('http');
+const { initializeSocket } = require('./socket/socketManager.js');
 
 // Connect to Database
-connectDB();
+// (moved to inside listen to prevent startup hang)
 
 const app = express();
 
-// 1. CORS - MUST BE VERY FIRST
-app.use(cors({
-  origin: [
+// 1. MANUAL CORS HEADERS (FOOLPROOF)
+app.use((req, res, next) => {
+  const allowed = [
     'http://localhost:5173',
     'http://localhost:8080',
     'https://gatistwamhrms.netlify.app'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-}));
+  ];
+  const origin = req.headers.origin;
+  if (allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
-// Handle preflight
-app.options('*', cors());
-
-// 2. Security & Proxies
+// 2. Proxies & Parsers
 app.set('trust proxy', 1);
-
-// 3. Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-// 4. Static Files
+// 3. Static Files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 5. Rate Limiting (Moved after CORS/Parsers)
-app.use(generalLimiter);
+// 4. Rate Limiting (DISABLED FOR TROUBLESHOOTING)
+// app.use(generalLimiter);
 
-// Ensure upload directories exist on startup
+// Ensure upload directories
 const uploadDir = path.join(__dirname, process.env.UPLOAD_PATH || 'uploads/profile-photos');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -71,72 +77,57 @@ app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/tasks', taskRoutes);
 app.use('/api/export', require('./routes/exportRoutes.js'));
 
-// Root route
-app.get('/', (req, res) => {
-  res.status(200).json({ success: true, message: 'API Running' });
-});
-
-
-// Health check endpoint (used by keep-alive)
+// Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
-/**
- * Error Handling
- */
+app.get('/', (req, res) => {
+  res.status(200).json({ success: true, message: 'AttendX API Live' });
+});
+
+// 404 & Error Handler
 app.use(notFound);
 app.use(errorHandler);
 
-// Start Server
+/**
+ * Start Server
+ */
 const PORT = process.env.PORT || 5000;
-
-// --- CRON JOBS (ADDED) ---
-const { startCheckoutReminderJob, startAbsentAlertJob, startAutoCheckoutJob } = require('./jobs/autoCheckoutReminder');
-const { startBreakMonitorJob } = require('./jobs/breakMonitor.js');
-startCheckoutReminderJob();
-startAbsentAlertJob();
-startAutoCheckoutJob();
-startBreakMonitorJob();
-// --- END CRON JOBS ---
-
-const { createServer } = require('http');
-const { initializeSocket } = require('./socket/socketManager.js');
-
 const httpServer = createServer(app);
-const io = initializeSocket(httpServer);
+initializeSocket(httpServer);
 
 const server = httpServer.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  console.log('Socket.io initialized');
+  console.log(`🚀 Server listening on port ${PORT}`);
+  connectDB();
+  
+  // Start Jobs
+  try {
+    const { startCheckoutReminderJob, startAbsentAlertJob, startAutoCheckoutJob } = require('./jobs/autoCheckoutReminder');
+    const { startBreakMonitorJob } = require('./jobs/breakMonitor.js');
+    startCheckoutReminderJob();
+    startAbsentAlertJob();
+    startAutoCheckoutJob();
+    startBreakMonitorJob();
+  } catch (err) {
+    console.error('Job start failure:', err.message);
+  }
 
-  // 🏆 Render Anti-Sleep Integration
+  // Render Anti-Sleep
   if (process.env.NODE_ENV === 'production') {
-    const RENDER_URL = process.env.RENDER_EXTERNAL_URL ||
-      process.env.CLIENT_URL?.replace('netlify.app', 'onrender.com');
-    
+    const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.CLIENT_URL?.replace('netlify.app', 'onrender.com');
     if (RENDER_URL) {
-      setInterval(async () => {
-        try {
-          const https = require('https');
-          https.get(`${RENDER_URL}/api/health`, (res) => {
-             console.log(`Keep-alive ping sent: ${res.statusCode}`);
-          });
-        } catch (err) {
-          console.error('Keep-alive failed:', err.message);
-        }
-      }, 14 * 60 * 1000); // every 14 minutes
+      setInterval(() => {
+        require('https').get(`${RENDER_URL}/api/health`, (res) => {
+          console.log(`Keep-alive ping: ${res.statusCode}`);
+        });
+      }, 14 * 60 * 1000);
     }
   }
 });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
+// Rejection Handler
+process.on('unhandledRejection', (err) => {
   console.log(`Error: ${err.message}`);
-  // Close server & exit process
   server.close(() => process.exit(1));
 });
