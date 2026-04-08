@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { UserPlus, User, Mail, Lock, Building, UserCheck, Loader2, Phone, CircleDollarSign } from 'lucide-react';
+import { UserPlus, User, Mail, Lock, Building, UserCheck, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -9,9 +9,7 @@ const RegisterEmployee: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
     password: '',
-    baseSalary: '',
     department: '',
     designation: '',
     role: 'employee'
@@ -28,9 +26,7 @@ const RegisterEmployee: React.FC = () => {
         setFormData({
           name: '',
           email: '',
-          phone: '',
           password: '',
-          baseSalary: '',
           department: '',
           designation: '',
           role: 'employee'
@@ -87,20 +83,6 @@ const RegisterEmployee: React.FC = () => {
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Phone className="w-4 h-4" /> Mobile Number
-              </label>
-              <input
-                type="text"
-                required
-                className="input-floating"
-                placeholder="9876543210"
-                value={formData.phone}
-                onChange={e => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <Lock className="w-4 h-4" /> Default Password
               </label>
               <input
@@ -110,20 +92,6 @@ const RegisterEmployee: React.FC = () => {
                 placeholder="••••••••"
                 value={formData.password}
                 onChange={e => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <CircleDollarSign className="w-4 h-4" /> Monthly Salary
-              </label>
-              <input
-                type="number"
-                required
-                className="input-floating"
-                placeholder="₹ 25000"
-                value={formData.baseSalary}
-                onChange={e => setFormData({ ...formData, baseSalary: e.target.value })}
               />
             </div>
 
