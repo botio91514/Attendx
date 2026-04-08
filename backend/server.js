@@ -35,25 +35,39 @@ if (!fs.existsSync(uploadDir)) {
   console.log('📁 Profile photo upload directory created');
 }
 
-/**
- * Middleware
- */
-// Enable CORS for frontend — supports multiple origins (comma-separated in FRONTEND_URL)
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:8080')
-  .split(',')
-  .map(url => url.trim().replace(/\/$/, ''));
+// Enable CORS
+const allowedOrigins = [
+  'https://gatistwamhrms.netlify.app',
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+    
+    // Check if the origin is allowed
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      return origin.startsWith(allowedOrigin);
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.error(`CORS blocked for origin: ${origin}`);
+      callback(null, false);
     }
-    callback(new Error(`CORS blocked: ${origin} is not allowed`));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
+
+// Handle preflight requests
+app.options('*', cors());
+
 
 // Body Parser
 app.use(express.json());
@@ -75,8 +89,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/holidays', require('./routes/holidays'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/profile', require('./routes/profileRoutes')); // Added for Profile Management
-app.use('/api/settings', require('./routes/settings'));
+app.use('/api/profile', require('./routes/profileRoutes'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/tasks', taskRoutes)
 app.use('/api/export', require('./routes/exportRoutes.js'));
