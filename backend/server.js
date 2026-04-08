@@ -24,33 +24,40 @@ app.set('trust proxy', 1);
 
 // 2. Enable CORS - MUST be before routes and other middleware
 const allowedOrigins = [
+  process.env.CLIENT_URL,
   'https://gatistwamhrms.netlify.app',
   'http://localhost:8080',
   'http://localhost:5173',
   'http://localhost:3000'
-];
+].filter(Boolean); // removes undefined values
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow if no origin (like mobile apps or curl)
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
     
-    // Check if origin is in our allowed list or is a Netlify preview/local
-    const isAllowed = allowedOrigins.some(o => origin.startsWith(o)) || 
-                     origin.endsWith('netlify.app') || 
-                     origin.includes('localhost');
-
-    if (isAllowed) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, false);
+      console.error(`[CORS] Blocked request from: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+  credentials: true, // needed for cookies (refresh token)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-CSRF-Token',
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ]
 }));
+
+// Handle preflight requests for ALL routes
+app.options('*', cors());
+
 
 
 // 3. Other Middleware
