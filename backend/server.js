@@ -19,15 +19,6 @@ connectDB();
 
 const app = express();
 
-// --- 1. DEBUG LOGGING MIDDLEWARE ---
-// Logs every incoming request with its Origin for CORS troubleshooting
-app.use((req, res, next) => {
-  const origin = req.headers.origin || 'No Origin';
-  const method = req.method;
-  const url = req.url;
-  console.log(`[${new Date().toISOString()}] ${method} ${url} - Origin: ${origin}`);
-  next();
-});
 
 // --- 2. CORS CONFIGURATION ---
 // Normalizing allowed origins (trimming and removing trailing slashes)
@@ -182,11 +173,11 @@ const server = httpServer.listen(PORT, () => {
     const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://attendx-backend-kz6g.onrender.com';
     
     if (RENDER_EXTERNAL_URL) {
-      setInterval(async () => {
+      setInterval(() => {
         try {
           const https = require('https');
           https.get(`${RENDER_EXTERNAL_URL}/api/health`, (res) => {
-             console.log(`[Keep-Alive] Ping sent to ${RENDER_EXTERNAL_URL} - Status: ${res.statusCode}`);
+            // Silently ping health endpoint
           });
         } catch (err) {
           console.error('[Keep-Alive] Failed:', err.message);

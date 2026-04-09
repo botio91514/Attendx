@@ -148,23 +148,30 @@ exports.getMyTasks = async (req, res, next) => {
     }
     // ────────────────────────────────────────────────────────────────
 
-    const attachSessions = async (tasks) => {
-      return await Promise.all(tasks.map(async (task) => {
-        const sessions = await WorkSession.find({ taskId: task._id })
-        return { ...task.toObject(), sessions }
-      }))
-    }
+    // ── Optimized Data Fetching (Prevent N+1) ───────────────────────
+    const allTaskIds = [
+      ...assignedToMeRaw.map(t => t._id),
+      ...myTasksRaw.map(t => t._id),
+      ...assignedByMeRaw.map(t => t._id)
+    ];
 
-    const [assignedToMe, myTasks, assignedByMe] = await Promise.all([
-      attachSessions(assignedToMeRaw),
-      attachSessions(myTasksRaw),
-      attachSessions(assignedByMeRaw)
-    ])
+    const allSessions = await WorkSession.find({ taskId: { $in: allTaskIds } });
+
+    const attachSessions = (tasks) => {
+      return tasks.map(task => {
+        const sessions = allSessions.filter(s => s.taskId.toString() === task._id.toString());
+        return { ...task.toObject(), sessions };
+      });
+    };
+
+    const assignedToMe = attachSessions(assignedToMeRaw);
+    const myTasks = attachSessions(myTasksRaw);
+    const assignedByMe = attachSessions(assignedByMeRaw);
 
     const sortTasks = (tasks) => {
-      const order = { "in-progress": 0, "paused": 1, "todo": 2, "completed": 3 }
-      return tasks.sort((a, b) => order[a.status] - order[b.status])
-    }
+      const order = { "in-progress": 0, "paused": 1, "todo": 2, "completed": 3 };
+      return tasks.sort((a, b) => order[a.status] - order[b.status]);
+    };
 
     res.status(200).json({
       success: true,
@@ -174,7 +181,7 @@ exports.getMyTasks = async (req, res, next) => {
         assignedByMe: sortTasks(assignedByMe)
       },
       message: "Tasks retrieved successfully"
-    })
+    });
   } catch (error) {
     next(error)
   }
@@ -450,8 +457,9 @@ exports.deleteTask = async (req, res, next) => {
       return res.status(404).json({ success: false, message: "Task not found" })
     }
 
-    if (task.createdBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: "Access forbidden" })
+    // Only creator OR an Admin can delete
+    if (task.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: "Access forbidden — only the creator or an admin can delete this task." })
     }
 
     if (task.status !== "todo") {
@@ -461,8 +469,11 @@ exports.deleteTask = async (req, res, next) => {
       })
     }
 
+    // Cleanup associated data (WorkSessions)
+    await WorkSession.deleteMany({ taskId: req.params.id })
     await Task.findByIdAndDelete(req.params.id)
-    res.status(200).json({ success: true, message: "Task deleted successfully" })
+
+    res.status(200).json({ success: true, message: "Task and associated work logs deleted successfully" })
   } catch (error) {
     next(error)
   }
@@ -491,6 +502,19 @@ exports.getAllTasksAdmin = async (req, res, next) => {
       const empTasks = tasksWithSessions.filter(t => t.assignedTo._id.toString() === emp._id.toString())
       const activeTask = empTasks.find(t => t.status === "in-progress")
       
+      // Calculate real-time seconds for summary (including active session time)
+      const totalSecondsToday = empTasks.reduce((sum, t) => {
+        let taskTime = t.totalTime;
+        if (t.status === 'in-progress') {
+          const activeSession = t.sessions.find(s => !s.endTime);
+          if (activeSession) {
+            const runningSeconds = Math.floor((new Date() - new Date(activeSession.startTime)) / 1000);
+            taskTime += runningSeconds;
+          }
+        }
+        return sum + taskTime;
+      }, 0);
+
       return {
         userId: emp._id,
         name: emp.name,
@@ -499,7 +523,7 @@ exports.getAllTasksAdmin = async (req, res, next) => {
         activeTask: activeTask || null,
         totalTasksToday: empTasks.length,
         completedToday: empTasks.filter(t => t.status === "completed").length,
-        totalSecondsToday: empTasks.reduce((sum, t) => sum + t.totalTime, 0)
+        totalSecondsToday
       }
     })
 
@@ -537,7 +561,17 @@ exports.getEmployeeTaskReport = async (req, res, next) => {
       return { ...task.toObject(), sessions }
     }))
 
-    const totalSeconds = tasksWithSessions.reduce((sum, t) => sum + t.totalTime, 0)
+    const totalSeconds = tasksWithSessions.reduce((sum, t) => {
+      let taskTime = t.totalTime;
+      if (t.status === 'in-progress') {
+        const activeSession = t.sessions.find(s => !s.endTime);
+        if (activeSession) {
+          const runningSeconds = Math.floor((new Date() - new Date(activeSession.startTime)) / 1000);
+          taskTime += runningSeconds;
+        }
+      }
+      return sum + taskTime;
+    }, 0);
 
     res.status(200).json({
       success: true,

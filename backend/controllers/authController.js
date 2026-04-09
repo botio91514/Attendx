@@ -72,8 +72,8 @@ const register = async (req, res, next) => {
       year: getCurrentYear(),
     });
 
-    // Generate token
-    const token = generateToken({ id: user._id });
+    // Generate token (consistent with login payload)
+    const token = generateToken({ id: user._id, role: user.role });
 
     res.status(201).json({
       success: true,

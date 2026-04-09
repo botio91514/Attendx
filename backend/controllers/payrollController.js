@@ -44,11 +44,14 @@ const getPayrollSummary = async (req, res, next) => {
       tempDate.setDate(tempDate.getDate() + 1);
     }
 
-    const payrollData = await Promise.all(employees.map(async (emp) => {
-      const attendance = await Attendance.find({
-        userId: emp._id,
-        date: { $gte: startStr, $lte: endStr }
-      });
+    // Optimized: Fetch all attendance for all employees in one go (Prevent N+1)
+    const allAttendance = await Attendance.find({
+      userId: { $in: employees.map(e => e._id) },
+      date: { $gte: startStr, $lte: endStr }
+    });
+
+    const payrollData = employees.map((emp) => {
+      const attendance = allAttendance.filter(a => a.userId.toString() === emp._id.toString());
 
       let presentCount = 0;
       let lateCount = 0;
@@ -90,7 +93,7 @@ const getPayrollSummary = async (req, res, next) => {
           grossSalary: Math.round(grossSalary)
         }
       };
-    }));
+    });
 
     res.status(200).json({
       success: true,
@@ -139,9 +142,15 @@ const finalizePayroll = async (req, res, next) => {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monthName = monthNames[parseInt(month) - 1];
 
+    // Optimized: Fetch all attendance for all employees in one go (Prevent N+1)
+    const allAttendance = await Attendance.find({
+      userId: { $in: employees.map(e => e._id) },
+      date: { $gte: startStr, $lte: endStr }
+    });
+
     // Notification Loop
     const results = await Promise.allSettled(employees.map(async (emp) => {
-      const attendance = await Attendance.find({ userId: emp._id, date: { $gte: startStr, $lte: endStr } });
+      const attendance = allAttendance.filter(a => a.userId.toString() === emp._id.toString());
       
       let p = 0, h = 0, l = 0, a = 0;
       attendance.forEach(r => {

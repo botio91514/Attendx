@@ -194,23 +194,16 @@ const checkOut = async (req, res, next) => {
       });
     }
 
-    // --- AUTO-END BREAK ON CHECKOUT (BUG 3 — FIX C) ---
-    const breakData = attendance.break || {};
-    if (breakData.isOnBreak) {
+    // --- AUTO-END BREAK ON CHECKOUT (UNIFIED FIX) ---
+    // Handle the current ongoing break in the breaks array
+    const ongoingBreakIndex = attendance.breaks.findIndex(b => !b.breakEnd);
+    if (ongoingBreakIndex !== -1) {
       const autoBreakEnd = new Date();
-      const sessionDuration = Math.floor((autoBreakEnd - new Date(breakData.startTime)) / 60000);
-      const totalBreakMinutes = (breakData.durationMinutes || 0) + sessionDuration;
-
-      // Update break fields surgically
-      attendance.break.endTime = autoBreakEnd;
-      attendance.break.isOnBreak = false;
-      attendance.break.durationMinutes = totalBreakMinutes;
+      const breakStart = attendance.breaks[ongoingBreakIndex].breakStart;
+      const duration = Math.floor((autoBreakEnd - new Date(breakStart)) / (1000 * 60));
       
-      const settings = await Settings.getSettings();
-      attendance.break.exceededPolicy = totalBreakMinutes > (settings.breakDurationMinutes || 60);
-      
-      // Update the compatibility field
-      attendance.totalBreakTime = totalBreakMinutes;
+      attendance.breaks[ongoingBreakIndex].breakEnd = autoBreakEnd;
+      attendance.breaks[ongoingBreakIndex].duration = duration;
     }
     // --- END AUTO-END BREAK ---
 
@@ -220,12 +213,15 @@ const checkOut = async (req, res, next) => {
     // Update check-out
     attendance.checkOut = now;
 
-    // --- RECALCULATE NET WORKING TIME (BUG 3 — FIX B) ---
+    // --- RECALCULATE NET WORKING TIME ---
     const checkInTime = new Date(attendance.checkIn);
     const checkOutTime = now;
-    const totalMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
-    const finalBreakMinutes = attendance.break?.durationMinutes || attendance.totalBreakTime || 0;
-    attendance.totalWorkingHours = Math.max(0, totalMinutes - finalBreakMinutes);
+    const grossMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
+    
+    // Total break time is the sum of all completed breaks
+    const totalBreakMinutes = attendance.breaks.reduce((sum, b) => sum + (b.duration || 0), 0);
+    attendance.totalBreakTime = totalBreakMinutes;
+    attendance.totalWorkingHours = Math.max(0, grossMinutes - totalBreakMinutes);
     // --- END RECALCULATE ---
     // Attach settings for pre-save middleware
     attendance._settings = settings;
@@ -825,6 +821,7 @@ const getTodayStats = async (req, res, next) => {
       date: today,
       userId: { $in: employeeIds }
     });
+
 
     // Calculate stats
     const stats = {
