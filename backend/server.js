@@ -19,6 +19,12 @@ connectDB();
 
 const app = express();
 
+// --- 1. DEBUG LOGGING (TEMPORARY) ---
+app.use((req, res, next) => {
+  console.log(`[DEBUG] ${new Date().toISOString()} | ${req.method} ${req.url} | Origin: ${req.headers.origin || 'No Origin'}`);
+  next();
+});
+
 
 // --- 2. CORS CONFIGURATION ---
 // Normalizing allowed origins (trimming and removing trailing slashes)
@@ -71,7 +77,7 @@ const corsOptions = {
   ],
   exposedHeaders: ['Set-Cookie'], 
   preflightContinue: false,
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 200 // Use 200 for better compatibility with some browsers
 };
 
 // Apply CORS middleware

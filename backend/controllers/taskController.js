@@ -183,10 +183,24 @@ exports.getMyTasks = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
+        // New planning structure
         todayTasks: sortTasks(today),
         backlogTasks: sortTasks(backlog),
         upcomingTasks: sortTasks(upcoming),
-        completedToday: completed
+        completedToday: completed,
+        // Legacy structure fallback for compatibility
+        assignedToMe: sortTasks(assignedToMeRaw.map(t => {
+          const sessions = allSessions.filter(s => s.taskId.toString() === t._id.toString())
+          return { ...t.toObject(), sessions }
+        })),
+        myTasks: sortTasks(myTasksRaw.map(t => {
+          const sessions = allSessions.filter(s => s.taskId.toString() === t._id.toString())
+          return { ...t.toObject(), sessions }
+        })),
+        assignedByMe: sortTasks(assignedByMeRaw.map(t => {
+          const sessions = allSessions.filter(s => s.taskId.toString() === t._id.toString())
+          return { ...t.toObject(), sessions }
+        }))
       },
       message: "Planned tasks retrieved successfully"
     })
