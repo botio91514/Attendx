@@ -33,9 +33,10 @@ export interface Task {
 }
 
 export interface MyTasksResponse {
-  assignedToMe: Task[]
-  myTasks: Task[]
-  assignedByMe: Task[]
+  todayTasks: Task[]
+  backlogTasks: Task[]
+  upcomingTasks: Task[]
+  completedToday: Task[]
 }
 
 export interface EmployeeSummary {
@@ -54,6 +55,19 @@ export interface AdminTasksResponse {
   employeeSummaries: EmployeeSummary[]
 }
 
+export interface EmployeeActivityResponse {
+  employee: TaskUser
+  summary: {
+    totalSecondsToday: number
+    totalTasksWorked: number
+    totalSessions: number
+  }
+  tasks: (Task & {
+    sessions: (WorkSession & { effectiveDuration: number })[]
+    taskTotalToday: number
+  })[]
+}
+
 export const createTask = (data: any) => api.post("/tasks", data)
 export const getMyTasks = () => api.get("/tasks/my")
 export const getEmployees = () => api.get("/tasks/employees")
@@ -66,3 +80,5 @@ export const getAllTasksAdmin = (date?: string) =>
   api.get(`/tasks/admin/all${date ? `?date=${date}` : ""}`)
 export const getEmployeeTaskReport = (userId: string, startDate: string, endDate: string) =>
   api.get(`/tasks/admin/report/${userId}?startDate=${startDate}&endDate=${endDate}`)
+export const getEmployeeActivity = (employeeId: string, date?: string) =>
+  api.get(`/tasks/admin/employee/${employeeId}/activity${date ? `?date=${date}` : ""}`)

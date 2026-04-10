@@ -17,7 +17,7 @@ const getNow = () => new Date()
 // ─────────────────────────────────────────────
 exports.createTask = async (req, res, next) => {
   try {
-    const { title, description, priority, assignedTo } = req.body
+    const { title, description, priority, assignedTo, plannedDate } = req.body
 
     if (!title || title.trim() === "") {
       return res.status(400).json({
@@ -33,7 +33,8 @@ exports.createTask = async (req, res, next) => {
       priority: priority || "medium",
       assignedTo: assignedTo || req.user._id,
       createdBy: req.user._id,
-      date: getTodayDate()
+      date: getTodayDate(),
+      plannedDate: plannedDate ? new Date(plannedDate) : new Date(getTodayDate())
     })
 
     await task.save()
@@ -84,104 +85,111 @@ exports.getMyTasks = async (req, res, next) => {
   try {
     const userId = req.user._id
     const todayStr = getTodayDate()
-    const todayStart = new Date(todayStr) // IST 00:00:00 (approx since it uses UTC constructor)
-    // To be precise with "today 00:00:00 IST":
-    // today 00:00:00 IST = today 00:00:00 UTC - 5:30 = yesterday 18:30:00 UTC
-    const istMidnight = new Date(new Date(todayStr + "T00:00:00Z").getTime() - (5.5 * 60 * 60 * 1000))
-
-    const filter = {
-      $or: [
-        { status: { $in: ["todo", "in-progress", "paused"] } },
-        { 
-          status: "completed", 
-          completedAt: { $gte: istMidnight } 
-        }
-      ]
-    }
+    
+    // IST Boundaries for precise date comparison
+    const istMidnight = new Date(`${todayStr}T00:00:00Z`)
+    istMidnight.setMinutes(istMidnight.getMinutes() - 330)
+    
+    const istEndOfDay = new Date(`${todayStr}T23:59:59Z`)
+    istEndOfDay.setMinutes(istEndOfDay.getMinutes() - 330)
 
     const populateFields = "name employeeId profilePhoto"
 
+    // 1. Fetch all tasks assigned to the user or created by the user
     const [assignedToMeRaw, myTasksRaw, assignedByMeRaw] = await Promise.all([
-      Task.find({ assignedTo: userId, createdBy: { $ne: userId }, ...filter })
+      Task.find({ assignedTo: userId, createdBy: { $ne: userId } })
         .populate("createdBy", populateFields)
         .populate("assignedTo", populateFields),
-      Task.find({ assignedTo: userId, createdBy: userId, ...filter })
+      Task.find({ assignedTo: userId, createdBy: userId })
         .populate("createdBy", populateFields)
         .populate("assignedTo", populateFields),
-      Task.find({ createdBy: userId, assignedTo: { $ne: userId }, ...filter })
+      Task.find({ createdBy: userId, assignedTo: { $ne: userId } })
         .populate("createdBy", populateFields)
         .populate("assignedTo", populateFields)
     ])
 
+    // Safety Guard: Close stale sessions (same as before)
     const Attendance = require("../models/Attendance")
-    const todayForGuard = getTodayDate()
-
-    // ── Safety Guard: close stale open sessions on fetch ───────────
-    // If a session has no endTime but the user already checked out today,
-    // it means auto-checkout or manual checkout missed the task pause.
-    // Cap it at checkout time so the timer doesn't show 15+ hours.
     const todayAttendance = await Attendance.findOne({
       userId,
-      date: todayForGuard,
+      date: todayStr,
       checkOut: { $exists: true, $ne: null }
     })
 
     if (todayAttendance?.checkOut) {
-      // Find all open sessions for this user
       const staleSessions = await WorkSession.find({ userId, endTime: null })
       for (const session of staleSessions) {
         session.endTime = todayAttendance.checkOut
-        session.duration = Math.max(
-          0,
-          Math.floor((session.endTime - session.startTime) / 1000)
-        )
+        session.duration = Math.max(0, Math.floor((session.endTime - session.startTime) / 1000))
         await session.save()
-        // Also update the task totalTime and mark as paused
         const staleTask = await Task.findById(session.taskId)
         if (staleTask && staleTask.status === 'in-progress') {
           staleTask.totalTime += session.duration
           staleTask.status = 'paused'
           await staleTask.save()
-          console.log(`⏸️ [Guard] Closed stale session for task "${staleTask.title}"`)
         }
       }
     }
-    // ────────────────────────────────────────────────────────────────
 
-    // ── Optimized Data Fetching (Prevent N+1) ───────────────────────
-    const allTaskIds = [
-      ...assignedToMeRaw.map(t => t._id),
-      ...myTasksRaw.map(t => t._id),
-      ...assignedByMeRaw.map(t => t._id)
-    ];
+    const allRelevantTasks = [...assignedToMeRaw, ...myTasksRaw, ...assignedByMeRaw]
+    const allTaskIds = allRelevantTasks.map(t => t._id)
+    const allSessions = await WorkSession.find({ taskId: { $in: allTaskIds } })
 
-    const allSessions = await WorkSession.find({ taskId: { $in: allTaskIds } });
+    // Attach sessions to tasks
+    const tasksWithSessions = allRelevantTasks.map(task => {
+      const sessions = allSessions.filter(s => s.taskId.toString() === task._id.toString())
+      return { ...task.toObject(), sessions }
+    })
 
-    const attachSessions = (tasks) => {
-      return tasks.map(task => {
-        const sessions = allSessions.filter(s => s.taskId.toString() === task._id.toString());
-        return { ...task.toObject(), sessions };
-      });
-    };
+    // 2. Dynamic Planning Logic
+    const today = []
+    const backlog = []
+    const upcoming = []
+    const completed = []
 
-    const assignedToMe = attachSessions(assignedToMeRaw);
-    const myTasks = attachSessions(myTasksRaw);
-    const assignedByMe = attachSessions(assignedByMeRaw);
+    // Use a Map to prevent duplicates (since a task could be in both 'assignedToMe' and 'myTasks' theoretically)
+    const uniqueTasks = new Map()
+    tasksWithSessions.forEach(t => uniqueTasks.set(t._id.toString(), t))
+
+    uniqueTasks.forEach(task => {
+      const pDate = task.plannedDate ? new Date(task.plannedDate) : null
+      const isCompleted = task.status === "completed"
+
+      if (isCompleted) {
+        if (task.completedAt && new Date(task.completedAt) >= istMidnight) {
+          completed.push(task)
+        }
+        return
+      }
+
+      // Categorization for Active/Pending Tasks
+      if (!pDate) {
+        today.push(task) // Default to today
+      } else if (pDate >= istMidnight && pDate <= istEndOfDay) {
+        today.push(task)
+      } else if (pDate < istMidnight) {
+        today.push(task) // Today includes Carry-over
+        backlog.push(task)
+      } else if (pDate > istEndOfDay) {
+        upcoming.push(task)
+      }
+    })
 
     const sortTasks = (tasks) => {
-      const order = { "in-progress": 0, "paused": 1, "todo": 2, "completed": 3 };
+      const order = { "in-progress": 0, "paused": 1, "todo": 2 };
       return tasks.sort((a, b) => order[a.status] - order[b.status]);
-    };
+    }
 
     res.status(200).json({
       success: true,
       data: {
-        assignedToMe: sortTasks(assignedToMe),
-        myTasks: sortTasks(myTasks),
-        assignedByMe: sortTasks(assignedByMe)
+        todayTasks: sortTasks(today),
+        backlogTasks: sortTasks(backlog),
+        upcomingTasks: sortTasks(upcoming),
+        completedToday: completed
       },
-      message: "Tasks retrieved successfully"
-    });
+      message: "Planned tasks retrieved successfully"
+    })
   } catch (error) {
     next(error)
   }
@@ -480,40 +488,70 @@ exports.deleteTask = async (req, res, next) => {
 }
 
 // ─────────────────────────────────────────────
-// FUNCTION 8: getAllTasksAdmin
+// FUNCTION 8: getAllTasksAdmin (Activity-Based)
 // ─────────────────────────────────────────────
 exports.getAllTasksAdmin = async (req, res, next) => {
   try {
-    const date = req.query.date || getTodayDate()
+    const dateStr = req.query.date || getTodayDate() // "YYYY-MM-DD"
     const populateFields = "name employeeId profilePhoto"
 
-    const tasks = await Task.find({ date })
+    // 1. Define the IST window in UTC (Shift UTC to match IST 00:00 to 23:59)
+    const dayStart = new Date(`${dateStr}T00:00:00Z`)
+    dayStart.setMinutes(dayStart.getMinutes() - 330) // UTC-5.5h = IST midnight
+    
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`)
+    dayEnd.setMinutes(dayEnd.getMinutes() - 330)
+
+    const now = new Date()
+
+    // 2. Find sessions that touched this day
+    const sessionsInWindow = await WorkSession.find({
+      $or: [
+        { startTime: { $gte: dayStart, $lte: dayEnd } }, // Started today
+        { endTime: { $gte: dayStart, $lte: dayEnd } },   // Ended today (but started before)
+        { endTime: null }                                // Still running (started before or today)
+      ]
+    })
+
+    // To ensure we don't count time outside the window for the running sessions:
+    const activeTaskIds = [...new Set(sessionsInWindow.map(s => s.taskId.toString()))]
+
+    // 3. Fetch tasks that had activity today
+    const tasks = await Task.find({ _id: { $in: activeTaskIds } })
       .populate("createdBy", populateFields)
       .populate("assignedTo", populateFields)
 
-    const tasksWithSessions = await Promise.all(tasks.map(async (task) => {
-      const sessions = await WorkSession.find({ taskId: task._id })
-      return { ...task.toObject(), sessions }
-    }))
+    const tasksWithSessions = tasks.map(task => {
+      // For the UI, we only attach sessions that occurred on THIS selected day
+      const taskSessions = sessionsInWindow.filter(s => s.taskId.toString() === task._id.toString())
+      return { ...task.toObject(), sessions: taskSessions }
+    })
 
-    const employees = await User.find({ role: "employee" }).select(populateFields)
+    const employees = await User.find({ role: "employee", isActive: true }).select(populateFields)
     
     const employeeSummaries = employees.map(emp => {
+      const empSessions = sessionsInWindow.filter(s => s.userId.toString() === emp._id.toString())
       const empTasks = tasksWithSessions.filter(t => t.assignedTo._id.toString() === emp._id.toString())
+      
       const activeTask = empTasks.find(t => t.status === "in-progress")
       
-      // Calculate real-time seconds for summary (including active session time)
-      const totalSecondsToday = empTasks.reduce((sum, t) => {
-        let taskTime = t.totalTime;
-        if (t.status === 'in-progress') {
-          const activeSession = t.sessions.find(s => !s.endTime);
-          if (activeSession) {
-            const runningSeconds = Math.floor((new Date() - new Date(activeSession.startTime)) / 1000);
-            taskTime += runningSeconds;
-          }
-        }
-        return sum + taskTime;
-      }, 0);
+      // 4. Calculate real-time seconds for TODAY only (Precision calculation)
+      const totalSecondsToday = empSessions.reduce((sum, s) => {
+        // Find overlap between the session and the 24h window
+        const effectiveStart = Math.max(s.startTime.getTime(), dayStart.getTime())
+        const effectiveEnd = Math.min(s.endTime ? s.endTime.getTime() : now.getTime(), dayEnd.getTime())
+        
+        const overlapMs = Math.max(0, effectiveEnd - effectiveStart)
+        return sum + Math.floor(overlapMs / 1000)
+      }, 0)
+
+      // Count tasks completed WITHIN the window
+      const completedTodayCount = empTasks.filter(t => 
+        t.status === "completed" && 
+        t.completedAt && 
+        new Date(t.completedAt) >= dayStart && 
+        new Date(t.completedAt) <= dayEnd
+      ).length
 
       return {
         userId: emp._id,
@@ -522,7 +560,7 @@ exports.getAllTasksAdmin = async (req, res, next) => {
         profilePhoto: emp.profilePhoto,
         activeTask: activeTask || null,
         totalTasksToday: empTasks.length,
-        completedToday: empTasks.filter(t => t.status === "completed").length,
+        completedToday: completedTodayCount,
         totalSecondsToday
       }
     })
@@ -533,7 +571,7 @@ exports.getAllTasksAdmin = async (req, res, next) => {
         tasks: tasksWithSessions,
         employeeSummaries
       },
-      message: "Admin tasks retrieved"
+      message: "Admin activity-based report retrieved"
     })
   } catch (error) {
     next(error)
@@ -599,6 +637,102 @@ exports.getEmployees = async (req, res, next) => {
       success: true,
       data: employees,
       message: "Employees retrieved"
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// ─────────────────────────────────────────────
+// FUNCTION 11: getEmployeeActivity (Admin Drill-down)
+// ─────────────────────────────────────────────
+exports.getEmployeeActivity = async (req, res, next) => {
+  try {
+    const { employeeId } = req.params
+    const { date } = req.query
+    const todayStr = date || getTodayDate()
+
+    // IST Window
+    const startOfDay = new Date(`${todayStr}T00:00:00+05:30`)
+    const endOfDay = new Date(`${todayStr}T23:59:59+05:30`)
+
+    const employee = await User.findById(employeeId).select("name employeeId profilePhoto")
+    if (!employee) return res.status(404).json({ success: false, message: "Employee not found" })
+
+    // Fetch sessions that overlap with this IST day for this employee
+    const sessions = await WorkSession.find({
+      userId: employeeId,
+      $or: [
+        { startTime: { $gte: startOfDay, $lte: endOfDay } },
+        { endTime: { $gte: startOfDay, $lte: endOfDay } },
+        { endTime: null } // Potential running sessions
+      ]
+    }).sort({ startTime: -1 }).lean()
+
+    const uniqueTaskIds = [...new Set(sessions.map(s => s.taskId.toString()))]
+    const tasks = await Task.find({ _id: { $in: uniqueTaskIds } }).lean()
+
+    let totalSecondsToday = 0
+    const taskMap = {}
+
+    // Initialize map
+    tasks.forEach(t => {
+      taskMap[t._id.toString()] = {
+        ...t,
+        sessions: [],
+        taskTotalToday: 0
+      }
+    })
+
+    sessions.forEach(session => {
+      const tId = session.taskId.toString()
+      if (!taskMap[tId]) return
+
+      // Calculate duration spent EXACTLY within this day
+      const sStart = new Date(Math.max(new Date(session.startTime).getTime(), startOfDay.getTime()))
+      const sEnd = session.endTime 
+        ? new Date(Math.min(new Date(session.endTime).getTime(), endOfDay.getTime()))
+        : new Date(Math.min(new Date().getTime(), endOfDay.getTime()))
+
+      let duration = 0
+      if (sEnd > sStart) {
+        duration = Math.floor((sEnd - sStart) / 1000)
+        totalSecondsToday += duration
+        taskMap[tId].taskTotalToday += duration
+      }
+
+      taskMap[tId].sessions.push({
+        ...session,
+        effectiveDuration: duration
+      })
+    })
+
+    // Prepare response
+    const groupedTasks = Object.values(taskMap)
+
+    // Sort tasks: In-progress first, then by latest work activity
+    groupedTasks.sort((a, b) => {
+      const aIsActive = a.status === 'in-progress'
+      const bIsActive = b.status === 'in-progress'
+      if (aIsActive && !bIsActive) return -1
+      if (!aIsActive && bIsActive) return 1
+      
+      const aLatest = a.sessions.length > 0 ? new Date(a.sessions[0].startTime) : 0
+      const bLatest = b.sessions.length > 0 ? new Date(b.sessions[0].startTime) : 0
+      return bLatest - aLatest
+    })
+
+    res.status(200).json({
+      success: true,
+      data: {
+        employee,
+        summary: {
+          totalSecondsToday,
+          totalTasksWorked: groupedTasks.length,
+          totalSessions: sessions.length
+        },
+        tasks: groupedTasks
+      }
     })
   } catch (error) {
     next(error)

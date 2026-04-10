@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { motion } from "framer-motion"
 import { 
   Plus, 
@@ -59,18 +59,23 @@ export const TasksPage: React.FC = () => {
     title: "",
     description: "",
     priority: "medium" as "low" | "medium" | "high",
-    assignedTo: user?.id || ""
+    assignedTo: user?.id || "",
+    plannedDate: format(new Date(), "yyyy-MM-dd")
   })
 
   const fetchTasks = useCallback(async () => {
     try {
       setIsLoading(true)
       const response = await getMyTasks()
-      const data: MyTasksResponse = response.data
+      const data = response.data
       setTasks(data)
 
       // Get active sessions for in-progress tasks
-      const allTasks = [...data.assignedToMe, ...data.myTasks, ...data.assignedByMe]
+      const allTasks = [
+        ...(data.todayTasks || []), 
+        ...(data.backlogTasks || []), 
+        ...(data.upcomingTasks || [])
+      ]
       const sessionMap: Record<string, string> = {}
       
       for (const task of allTasks) {
@@ -103,22 +108,14 @@ export const TasksPage: React.FC = () => {
     fetchEmployees()
   }, [fetchTasks, fetchEmployees])
 
-  const sections = React.useMemo(() => {
-    if (!tasks) return { assignedToMe: [], myTasks: [], assignedByMe: [], completed: [] }
-
-    const isPending = (t: Task) => t.status !== "completed"
-    const isCompleted = (t: Task) => t.status === "completed"
-
-    const all = [...tasks.assignedToMe, ...tasks.myTasks, ...tasks.assignedByMe]
-    // Use a Map to keep unique completed tasks (incase of overlaps in theoretical future cases)
-    const completedMap = new Map()
-    all.filter(isCompleted).forEach(t => completedMap.set(t._id, t))
+  const sections = useMemo(() => {
+    if (!tasks) return { today: [], backlog: [], upcoming: [], completed: [] }
 
     return {
-      assignedToMe: tasks.assignedToMe.filter(isPending),
-      myTasks: tasks.myTasks.filter(isPending),
-      assignedByMe: tasks.assignedByMe.filter(isPending),
-      completed: Array.from(completedMap.values())
+      today: tasks.todayTasks || [],
+      backlog: tasks.backlogTasks || [],
+      upcoming: tasks.upcomingTasks || [],
+      completed: tasks.completedToday || []
     }
   }, [tasks])
 
@@ -138,7 +135,8 @@ export const TasksPage: React.FC = () => {
         title: "",
         description: "",
         priority: "medium",
-        assignedTo: user?.id || ""
+        assignedTo: user?.id || "",
+        plannedDate: format(new Date(), "yyyy-MM-dd")
       })
       fetchTasks()
     } catch (error: any) {
@@ -217,35 +215,35 @@ export const TasksPage: React.FC = () => {
           className="space-y-4"
         >
           {renderTaskSection(
-            "Assigned to Me", 
-            sections.assignedToMe, 
-            <Users className="w-5 h-5" />, 
-            "No pending tasks assigned to you."
+            "Today's Work", 
+            sections.today, 
+            <CalendarIcon className="w-5 h-5 text-blue-500" />, 
+            "No tasks scheduled for today."
           )}
           
           <Separator className="my-8 opacity-50" />
           
           {renderTaskSection(
-            "My Tasks", 
-            sections.myTasks, 
-            <CheckCircle2 className="w-5 h-5" />, 
-            "No pending personal tasks."
+            "Backlog / Overdue", 
+            sections.backlog, 
+            <AlertCircle className="w-5 h-5 text-orange-500" />, 
+            "Nothing pending from before today."
           )}
           
           <Separator className="my-8 opacity-50" />
 
           {renderTaskSection(
-            "Assigned by Me", 
-            sections.assignedByMe, 
-            <Users className="w-5 h-5" />, 
-            "No pending tasks assigned by you."
+            "Upcoming Plans", 
+            sections.upcoming, 
+            <ListTodo className="w-5 h-5 text-indigo-500" />, 
+            "No future tasks planned."
           )}
 
           {sections.completed.length > 0 && (
             <>
               <Separator className="my-8 opacity-50" />
               {renderTaskSection(
-                "Completed Tasks", 
+                "Completed Today", 
                 sections.completed, 
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />, 
                 "No completed tasks today."
@@ -263,71 +261,91 @@ export const TasksPage: React.FC = () => {
 
       {/* Create Task Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
+        <DialogContent className="sm:max-w-[550px] p-0 overflow-hidden rounded-[24px] border-none shadow-2xl bg-white">
           <form onSubmit={handleCreateTask}>
-            <div className="bg-primary/5 p-6 border-b border-slate-100">
+            <div className="bg-slate-50/50 p-8 border-b border-slate-100/80">
               <DialogHeader>
-                <DialogTitle className="text-2xl font-bold text-slate-800">Create New Task</DialogTitle>
-                <DialogDescription className="text-slate-500">
-                  Fill in the details below to assign a new task.
+                <DialogTitle className="text-2xl font-black text-slate-900 tracking-tight">Create New Task</DialogTitle>
+                <DialogDescription className="text-slate-500 font-medium mt-1">
+                  Assign work and set clear deadlines for the team.
                 </DialogDescription>
               </DialogHeader>
             </div>
             
-            <div className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 ml-1">Task Title</label>
+            <div className="p-8 space-y-8">
+              <div className="space-y-3">
+                <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  Task Title
+                </label>
                 <Input 
                   placeholder="e.g. Design UI for Task Module" 
                   value={formData.title}
                   onChange={e => setFormData({...formData, title: e.target.value})}
-                  className="rounded-xl border-slate-200 focus:ring-primary h-12 text-slate-800"
+                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 h-14 text-base font-semibold text-slate-900 transition-all placeholder:text-slate-400"
                   required
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 ml-1">Description (Optional)</label>
+              <div className="space-y-3">
+                <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  Description <span className="text-slate-400 normal-case font-medium">(Optional)</span>
+                </label>
                 <Textarea 
-                  placeholder="Add more details about this task..."
+                  placeholder="Provide context or specific requirements..."
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
-                  className="rounded-xl border-slate-200 focus:ring-primary min-h-[100px] text-slate-800"
+                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 min-h-[120px] text-base text-slate-700 leading-relaxed transition-all"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700 ml-1">Priority</label>
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Planned For</label>
+                  <div className="relative group">
+                    <Input 
+                      type="date"
+                      value={formData.plannedDate ? format(new Date(formData.plannedDate), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
+                      onChange={e => setFormData({...formData, plannedDate: e.target.value})}
+                      className="rounded-xl border-slate-200 h-12 bg-slate-50/30 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                    />
+                    <CalendarIcon className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-primary transition-colors" />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Priority</label>
                   <Select 
                     value={formData.priority} 
                     onValueChange={(val: any) => setFormData({...formData, priority: val})}
                   >
-                    <SelectTrigger className="rounded-xl border-slate-200 h-12">
+                    <SelectTrigger className="rounded-xl border-slate-200 h-12 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl">
+                      <SelectItem value="low" className="font-semibold text-blue-600">Low</SelectItem>
+                      <SelectItem value="medium" className="font-semibold text-amber-600">Medium</SelectItem>
+                      <SelectItem value="high" className="font-semibold text-red-600">High</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700 ml-1">Assign To</label>
+                <div className="space-y-3 col-span-2">
+                  <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Assign To</label>
                   <Select 
                     value={formData.assignedTo} 
                     onValueChange={val => setFormData({...formData, assignedTo: val})}
                   >
-                    <SelectTrigger className="rounded-xl border-slate-200 h-12">
+                    <SelectTrigger className="rounded-xl border-slate-200 h-12 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl max-h-[300px]">
-                      <SelectItem value={user?.id || ""}>Assign to myself</SelectItem>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl max-h-[300px]">
+                      <SelectItem value={user?.id || ""} className="font-bold text-primary">Assign to myself</SelectItem>
+                      <Separator className="my-2 opacity-50" />
                       {employees.filter(emp => emp._id !== user?.id).map(emp => (
-                        <SelectItem key={emp._id} value={emp._id}>
-                          {emp.name} ({emp.employeeId})
+                        <SelectItem key={emp._id} value={emp._id} className="font-medium">
+                          {emp.name} <span className="text-slate-400 text-xs ml-1">({emp.employeeId})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -336,24 +354,24 @@ export const TasksPage: React.FC = () => {
               </div>
             </div>
 
-            <DialogFooter className="p-8 bg-slate-50/80 border-t border-slate-100 mt-0">
+            <DialogFooter className="p-8 bg-slate-50/50 border-t border-slate-100/80 mt-0 flex items-center gap-4">
               <Button 
                 type="button" 
                 variant="ghost" 
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-xl h-12 px-6"
+                className="rounded-xl h-14 px-8 font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
                 disabled={isCreating}
               >
                 Cancel
               </Button>
               <Button 
                 type="submit" 
-                className="rounded-xl bg-primary hover:bg-primary/90 text-white h-12 px-8 font-bold shadow-lg shadow-primary/20"
+                className="rounded-xl bg-primary hover:bg-primary/90 text-white h-14 px-10 font-black shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex-grow text-base"
                 disabled={isCreating}
               >
                 {isCreating ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
                     Creating...
                   </>
                 ) : (

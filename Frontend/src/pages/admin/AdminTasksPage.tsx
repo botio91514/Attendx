@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Monitor, 
@@ -60,6 +61,7 @@ const LiveTimer: React.FC<{ task: Task; startTime?: string }> = ({ task, startTi
 }
 
 export const AdminTasksPage: React.FC = () => {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("live")
   const [isLoading, setIsLoading] = useState(true)
   const [data, setData] = useState<AdminTasksResponse | null>(null)
@@ -264,10 +266,13 @@ export const AdminTasksPage: React.FC = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <Card className={cn(
-                    "overflow-hidden border shadow-sm transition-all duration-300 group hover:shadow-lg flex flex-col h-full",
-                    emp.activeTask ? "bg-emerald-50/10 border-emerald-100" : "bg-white dark:bg-slate-900"
-                  )}>
+                  <Card 
+                    onClick={() => navigate(`/admin/employee/${emp.userId}/activity?date=${selectedDate}`)}
+                    className={cn(
+                      "overflow-hidden border shadow-sm transition-all duration-300 group hover:shadow-lg flex flex-col h-full cursor-pointer hover:border-primary/40 hover:ring-4 hover:ring-primary/5",
+                      emp.activeTask ? "bg-emerald-50/10 border-emerald-100" : "bg-white dark:bg-slate-900"
+                    )}
+                  >
                     <CardHeader className="p-4 pb-3">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10 border-2 border-white shadow-sm ring-2 ring-slate-50 dark:ring-slate-800">
@@ -290,6 +295,7 @@ export const AdminTasksPage: React.FC = () => {
                         )}>
                           {emp.activeTask ? "Working" : emp.totalTasksToday > 0 ? "Paused" : "Idle"}
                         </Badge>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-primary transition-all group-hover:translate-x-1" />
                       </div>
                     </CardHeader>
                     

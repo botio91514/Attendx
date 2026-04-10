@@ -1,11 +1,11 @@
 import React, { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { 
-  Play, 
-  Pause, 
-  CheckCircle2, 
-  Trash2, 
-  Clock, 
+import {
+  Play,
+  Pause,
+  CheckCircle2,
+  Trash2,
+  Clock,
   User as UserIcon,
   AlertCircle,
   Loader2
@@ -21,13 +21,13 @@ import {
 } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import { format } from "date-fns"
-import { 
-  Task, 
-  startTask, 
-  pauseTask, 
-  resumeTask, 
-  completeTask, 
-  deleteTask 
+import {
+  Task,
+  startTask,
+  pauseTask,
+  resumeTask,
+  completeTask,
+  deleteTask
 } from "@/lib/taskApi"
 import { useTaskTimer } from "@/hooks/useTaskTimer"
 import { cn } from "@/lib/utils"
@@ -47,8 +47,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const [isActing, setIsActing] = useState(false)
   const { displayTime, isRunning } = useTaskTimer(task, activeSessionStartTime)
-  const isAssignedToMe = task.assignedTo._id === currentUserId
-  const isCreatedByMe = task.createdBy._id === currentUserId
+  const isAssignedToMe = task.assignedTo?._id === currentUserId
+  const isCreatedByMe = task.createdBy?._id === currentUserId
 
   const handleAction = async (actionFn: (id: string) => Promise<any>, successMsg: string) => {
     try {
@@ -74,9 +74,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "todo": 
+      case "todo":
         return <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">To Do</Badge>
-      case "in-progress": 
+      case "in-progress":
         return (
           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1.5">
             <span className="relative flex h-2 w-2">
@@ -86,9 +86,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             In Progress
           </Badge>
         )
-      case "paused": 
+      case "paused":
         return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Paused</Badge>
-      case "completed": 
+      case "completed":
         return <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">Completed</Badge>
       default: return null
     }
@@ -115,12 +115,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             {getStatusBadge(task.status)}
             {!isAssignedToMe && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <UserIcon className="w-3 h-3" /> Assigned to: {task.assignedTo.name}
+                <UserIcon className="w-3 h-3" /> Assigned to: {task.assignedTo?.name || "Unknown"}
               </span>
             )}
             {!isCreatedByMe && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <UserIcon className="w-3 h-3" /> Assigned by: {task.createdBy.name}
+                <UserIcon className="w-3 h-3" /> Assigned by: {task.createdBy?.name || "Unknown"}
               </span>
             )}
           </div>
@@ -132,7 +132,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               {task.description}
             </p>
           )}
-          
+
           <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
             <Clock className={cn("w-4 h-4", isRunning ? "text-emerald-500" : "text-slate-400")} />
             <span className={cn(
@@ -155,8 +155,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               {isAssignedToMe && task.status !== "completed" && (
                 <div className="flex gap-2 w-full">
                   {task.status === "todo" && (
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                       onClick={() => handleAction(startTask, "Task started successfully")}
                       disabled={isActing}
@@ -167,8 +167,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   )}
                   {task.status === "in-progress" && (
                     <>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
                         className="w-full border-amber-200 text-amber-700 hover:bg-amber-50"
                         onClick={() => handleAction(pauseTask, "Task paused")}
@@ -177,8 +177,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                         {isActing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
                         Pause
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="w-full bg-teal-600 hover:bg-teal-700 text-white"
                         onClick={() => handleAction(completeTask, "Task completed!")}
                         disabled={isActing}
@@ -190,8 +190,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   )}
                   {task.status === "paused" && (
                     <>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="w-full bg-sky-600 hover:bg-sky-700 text-white"
                         onClick={() => handleAction(resumeTask, "Resumed working on task")}
                         disabled={isActing}
@@ -199,8 +199,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                         {isActing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />}
                         Resume
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="w-full bg-teal-600 hover:bg-teal-700 text-white"
                         onClick={() => handleAction(completeTask, "Task completed!")}
                         disabled={isActing}
@@ -218,9 +218,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      size="icon" 
-                      variant="ghost" 
+                    <Button
+                      size="icon"
+                      variant="ghost"
                       className="text-slate-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
                       onClick={() => handleAction(deleteTask, "Task deleted")}
                       disabled={isActing}
