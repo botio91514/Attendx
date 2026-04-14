@@ -19,18 +19,30 @@ connectDB();
 
 const app = express();
 
-// --- 1. SMART LOGGING ---
+// --- 1. SMART LOGGING (Ultra-Quiet) ---
 app.use((req, res, next) => {
-  // Skip noisy requests to keep console clean
-  const noisyPaths = ['/api/health', '/api/notifications', '/api/attendance/break/status'];
-  if (req.method === 'OPTIONS' || noisyPaths.includes(req.url)) {
-    return next();
-  }
-
   const start = Date.now();
+  
+  // Routes to never log (polling and noise)
+  const quietPaths = [
+    '/api/health', 
+    '/api/notifications', 
+    '/api/attendance/break/status', 
+    '/api/auth/refresh-token'
+  ];
+
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    const isQuietPath = quietPaths.some(p => req.originalUrl.startsWith(p));
+    
+    // 🔥 LOG CRITERIA:
+    // 1. Must NOT be an OPTIONS (preflight) request
+    // 2. Must NOT be in the quiet list
+    // 3. Must NOT be a 304 (Not Modified) - this removes the massive spam
+    // 4. We only log GET/POST if they actually changed or retrieved something (Status != 304)
+    if (req.method !== 'OPTIONS' && !isQuietPath && res.statusCode !== 304) {
+      console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+    }
   });
   next();
 });

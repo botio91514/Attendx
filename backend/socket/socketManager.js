@@ -8,8 +8,8 @@ let io; // singleton instance
 const initializeSocket = (httpServer) => {
   io = new Server(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL 
-        ? process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/+$/, '')).filter(Boolean) 
+      origin: process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/+$/, '')).filter(Boolean)
         : ['https://gatistwamhrms.netlify.app', 'http://localhost:8080', 'http://localhost:5173', 'http://localhost:3000'],
       methods: ['GET', 'POST'],
       credentials: true

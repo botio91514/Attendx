@@ -106,10 +106,10 @@ export const EmployeeActivityPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <Button 
           variant="ghost" 
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/admin/tasks')}
           className="rounded-xl gap-2 hover:bg-white hover:shadow-sm text-slate-500 hover:text-slate-900 transition-all font-semibold text-sm"
         >
-          <ArrowLeft className="w-4 h-4" /> Dashboard
+          <ArrowLeft className="w-4 h-4" /> Task Reports
         </Button>
 
         <div className="flex items-center gap-3 bg-white p-1 rounded-xl border border-slate-200/60 shadow-sm">

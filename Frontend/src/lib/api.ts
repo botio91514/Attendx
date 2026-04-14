@@ -7,7 +7,7 @@ let refreshPromise: Promise<string | null> | null = null;
  */
 async function apiRequest(endpoint: string, options: RequestInit = {}) {
   let token = localStorage.getItem('attendx_token');
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -25,7 +25,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
 
     // 🔄 AUTO-REFRESH LOGIC (If Access Token Expired)
     if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh-token')) {
-      
+
       // Deduplicate refresh attempts
       if (!refreshPromise) {
         console.log('🔄 Access token expired. Attempting to refresh token...');
@@ -61,7 +61,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
           ...headers,
           'Authorization': `Bearer ${newToken}`
         } as HeadersInit;
-        
+
         response = await fetch(`${API_URL}${endpoint}`, {
           ...fetchOptions,
           headers: newHeaders

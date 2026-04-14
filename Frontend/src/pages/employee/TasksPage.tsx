@@ -261,9 +261,9 @@ export const TasksPage: React.FC = () => {
 
       {/* Create Task Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="sm:max-w-[550px] p-0 overflow-hidden rounded-[24px] border-none shadow-2xl bg-white">
-          <form onSubmit={handleCreateTask}>
-            <div className="bg-slate-50/50 p-8 border-b border-slate-100/80">
+        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-[20px] border-none shadow-2xl bg-white max-h-[95vh] flex flex-col">
+          <form onSubmit={handleCreateTask} className="flex flex-col overflow-hidden">
+            <div className="bg-slate-50/50 p-5 border-b border-slate-100/80">
               <DialogHeader>
                 <DialogTitle className="text-2xl font-black text-slate-900 tracking-tight">Create New Task</DialogTitle>
                 <DialogDescription className="text-slate-500 font-medium mt-1">
@@ -272,8 +272,8 @@ export const TasksPage: React.FC = () => {
               </DialogHeader>
             </div>
             
-            <div className="p-8 space-y-8">
-              <div className="space-y-3">
+            <div className="p-5 space-y-5 overflow-y-auto">
+              <div className="space-y-2">
                 <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   Task Title
@@ -282,12 +282,12 @@ export const TasksPage: React.FC = () => {
                   placeholder="e.g. Design UI for Task Module" 
                   value={formData.title}
                   onChange={e => setFormData({...formData, title: e.target.value})}
-                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 h-14 text-base font-semibold text-slate-900 transition-all placeholder:text-slate-400"
+                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 h-11 text-base font-semibold text-slate-900 transition-all placeholder:text-slate-400"
                   required
                 />
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   Description <span className="text-slate-400 normal-case font-medium">(Optional)</span>
@@ -296,31 +296,31 @@ export const TasksPage: React.FC = () => {
                   placeholder="Provide context or specific requirements..."
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
-                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 min-h-[120px] text-base text-slate-700 leading-relaxed transition-all"
+                  className="rounded-xl border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-2 focus:ring-primary/20 min-h-[80px] text-base text-slate-700 leading-relaxed transition-all"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Planned For</label>
                   <div className="relative group">
                     <Input 
                       type="date"
                       value={formData.plannedDate ? format(new Date(formData.plannedDate), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
                       onChange={e => setFormData({...formData, plannedDate: e.target.value})}
-                      className="rounded-xl border-slate-200 h-12 bg-slate-50/30 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                      className="rounded-xl border-slate-200 h-10 bg-slate-50/30 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                     />
                     <CalendarIcon className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-primary transition-colors" />
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Priority</label>
                   <Select 
                     value={formData.priority} 
                     onValueChange={(val: any) => setFormData({...formData, priority: val})}
                   >
-                    <SelectTrigger className="rounded-xl border-slate-200 h-12 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
+                    <SelectTrigger className="rounded-xl border-slate-200 h-10 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl border-slate-100 shadow-xl">
@@ -331,18 +331,18 @@ export const TasksPage: React.FC = () => {
                   </Select>
                 </div>
 
-                <div className="space-y-3 col-span-2">
+                <div className="space-y-2 col-span-2">
                   <label className="text-[13px] font-bold text-slate-800 uppercase tracking-wider">Assign To</label>
                   <Select 
                     value={formData.assignedTo} 
                     onValueChange={val => setFormData({...formData, assignedTo: val})}
                   >
-                    <SelectTrigger className="rounded-xl border-slate-200 h-12 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
+                    <SelectTrigger className="rounded-xl border-slate-200 h-10 bg-slate-50/30 font-bold text-slate-900 focus:ring-2 focus:ring-primary/20 transition-all">
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-100 shadow-xl max-h-[300px]">
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl max-h-[250px]">
                       <SelectItem value={user?.id || ""} className="font-bold text-primary">Assign to myself</SelectItem>
-                      <Separator className="my-2 opacity-50" />
+                      <Separator className="my-1 opacity-50" />
                       {employees.filter(emp => emp._id !== user?.id).map(emp => (
                         <SelectItem key={emp._id} value={emp._id} className="font-medium">
                           {emp.name} <span className="text-slate-400 text-xs ml-1">({emp.employeeId})</span>
@@ -354,19 +354,19 @@ export const TasksPage: React.FC = () => {
               </div>
             </div>
 
-            <DialogFooter className="p-8 bg-slate-50/50 border-t border-slate-100/80 mt-0 flex items-center gap-4">
+            <DialogFooter className="p-5 bg-slate-50/50 border-t border-slate-100/80 mt-0 flex items-center gap-3">
               <Button 
                 type="button" 
                 variant="ghost" 
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-xl h-14 px-8 font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
+                className="rounded-xl h-11 px-6 font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
                 disabled={isCreating}
               >
                 Cancel
               </Button>
               <Button 
                 type="submit" 
-                className="rounded-xl bg-primary hover:bg-primary/90 text-white h-14 px-10 font-black shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex-grow text-base"
+                className="rounded-xl bg-primary hover:bg-primary/90 text-white h-11 px-8 font-black shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex-grow text-base"
                 disabled={isCreating}
               >
                 {isCreating ? (
