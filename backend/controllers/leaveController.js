@@ -433,6 +433,37 @@ const approveLeave = async (req, res, next) => {
     leave.reviewedAt = new Date();
     await leave.save();
 
+    // 🌊 SYNC ATTENDANCE: Update any existing 'absent' records to 'leave'
+    try {
+      const Attendance = require('../models/Attendance');
+      const start = new Date(leave.startDate);
+      const end = new Date(leave.endDate);
+
+      // Loop through each date in the leave range
+      let curr = new Date(start);
+      while (curr <= end) {
+        const dateStr = curr.toISOString().split('T')[0];
+        
+        // Find existing 'absent' record for this user/date
+        await Attendance.findOneAndUpdate(
+          { 
+            userId: leave.userId._id, 
+            date: dateStr, 
+            status: 'absent' 
+          },
+          { 
+            $set: { 
+              status: 'leave',
+              notes: `[Status adjusted: Leave approved on ${new Date().toLocaleDateString()}]`
+            } 
+          }
+        );
+        curr.setDate(curr.getDate() + 1);
+      }
+    } catch (syncErr) {
+      console.error('❌ Failed to sync attendance on leave approval:', syncErr);
+    }
+
     res.status(200).json({
       success: true,
       data: {

@@ -19,9 +19,19 @@ connectDB();
 
 const app = express();
 
-// --- 1. DEBUG LOGGING (TEMPORARY) ---
+// --- 1. SMART LOGGING ---
 app.use((req, res, next) => {
-  console.log(`[DEBUG] ${new Date().toISOString()} | ${req.method} ${req.url} | Origin: ${req.headers.origin || 'No Origin'}`);
+  // Skip noisy requests to keep console clean
+  const noisyPaths = ['/api/health', '/api/notifications', '/api/attendance/break/status'];
+  if (req.method === 'OPTIONS' || noisyPaths.includes(req.url)) {
+    return next();
+  }
+
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+  });
   next();
 });
 

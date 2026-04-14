@@ -514,16 +514,27 @@ const getAttendanceHistory = async (req, res, next) => {
           // 🛠️ Skip Sundays from leave counting (User Rule)
           if (current.getDay() !== 0) {
             const dateStr = current.toISOString().split('T')[0];
-            const hasAttendance = finalAttendance.some(a => a.date.startsWith(dateStr));
+            const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
+            const hasRealAttendance = existingIndex !== -1 && finalAttendance[existingIndex].status !== 'absent';
             
-            if (!hasAttendance && dateStr <= todayStr) {
-              finalAttendance.push({
-                userId,
-                date: dateStr,
-                status: 'leave',
-                leaveType: leave.type,
-                isVirtual: true
-              });
+            if (dateStr <= todayStr) {
+              if (!hasRealAttendance) {
+                const leaveData = {
+                  userId,
+                  date: dateStr,
+                  status: 'leave',
+                  leaveType: leave.leaveType,
+                  isVirtual: true
+                };
+
+                if (existingIndex !== -1) {
+                  // Override the 'absent' status with 'leave'
+                  finalAttendance[existingIndex] = leaveData;
+                } else {
+                  // No record at all, inject a new one
+                  finalAttendance.push(leaveData);
+                }
+              }
             }
           }
           current.setDate(current.getDate() + 1);
@@ -570,6 +581,29 @@ const getAttendanceHistory = async (req, res, next) => {
               isVirtual: true
             });
           }
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    // 5. 🧩 Smart Gap Filling (Mark missing working days as Absent)
+    if (startD && endD) {
+      let current = new Date(startD);
+      const lastCheckDate = new Date(Math.min(endD, new Date(todayStr))); // Don't mark future days as absent
+      
+      while (current <= lastCheckDate) {
+        const dateStr = current.toISOString().split('T')[0];
+        const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
+        
+        // If no record exists yet (no check-in, no leave, no holiday, no Sunday)
+        if (!hasRecord) {
+          finalAttendance.push({
+            userId,
+            date: dateStr,
+            status: 'absent',
+            isVirtual: true,
+            message: 'No record found'
+          });
         }
         current.setDate(current.getDate() + 1);
       }
@@ -634,18 +668,21 @@ const getAllAttendance = async (req, res, next) => {
 
     // 🏆 Step 4: Merge everything
     const combined = employees.map(emp => {
-      // Find attendance
+      // Find attendance record (if any)
       const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
       
-      if (record) {
+      // Find approved leave for this specific date (if any)
+      const leave = leaves.find(l => l.userId.toString() === emp._id.toString());
+
+      // PRIORITY 1: Real activity (Presence/Late)
+      if (record && record.status !== 'absent') {
         return {
           ...record.toObject(),
-          userId: emp // Ensure full user object is present
+          userId: emp
         };
       }
 
-      // Check if on leave
-      const leave = leaves.find(l => l.userId.toString() === emp._id.toString());
+      // PRIORITY 2: Approved Leave (Overrides Absence)
       if (leave) {
         return {
           userId: emp,
@@ -657,8 +694,15 @@ const getAllAttendance = async (req, res, next) => {
         };
       }
 
-      // Otherwise Absent (if not today or if it's today and past start time, etc.)
-      // For now, mark as absent if no record and no leave
+      // PRIORITY 3: Existing Absent Record
+      if (record) {
+        return {
+          ...record.toObject(),
+          userId: emp
+        };
+      }
+
+      // PRIORITY 4: De-facto Absent (No record at all)
       return {
         userId: emp,
         date: targetDate,
