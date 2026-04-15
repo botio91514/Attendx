@@ -124,9 +124,12 @@ exports.getMyTasks = async (req, res, next) => {
         await session.save()
         const staleTask = await Task.findById(session.taskId)
         if (staleTask && staleTask.status === 'in-progress') {
-          staleTask.totalTime += session.duration
-          staleTask.status = 'paused'
-          await staleTask.save()
+          // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+          // that may be missing fields added to the schema after they were created.
+          await Task.findByIdAndUpdate(staleTask._id, {
+            $inc: { totalTime: session.duration },
+            $set: { status: 'paused' }
+          })
         }
       }
     }
@@ -246,9 +249,12 @@ exports.startTask = async (req, res, next) => {
         session.endTime = getNow()
         session.duration = Math.floor((session.endTime - session.startTime) / 1000)
         await session.save()
-        activeTask.totalTime += session.duration
-        activeTask.status = "paused"
-        await activeTask.save()
+        // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+        // that may be missing fields added to the schema after they were created.
+        await Task.findByIdAndUpdate(activeTask._id, {
+          $inc: { totalTime: session.duration },
+          $set: { status: "paused" }
+        })
       }
     }
 
@@ -259,8 +265,8 @@ exports.startTask = async (req, res, next) => {
       startTime: getNow()
     })
 
-    task.status = "in-progress"
-    await task.save()
+    // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+    await Task.findByIdAndUpdate(task._id, { $set: { status: "in-progress" } })
 
     const updatedTask = await Task.findById(task._id)
       .populate("createdBy", "name employeeId profilePhoto")
@@ -310,9 +316,11 @@ exports.pauseTask = async (req, res, next) => {
     session.duration = Math.floor((session.endTime - session.startTime) / 1000)
     await session.save()
 
-    task.totalTime += session.duration
-    task.status = "paused"
-    await task.save()
+    // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+    await Task.findByIdAndUpdate(task._id, {
+      $inc: { totalTime: session.duration },
+      $set: { status: "paused" }
+    })
 
     const updatedTask = await Task.findById(task._id)
       .populate("createdBy", "name employeeId profilePhoto")
@@ -364,9 +372,11 @@ exports.resumeTask = async (req, res, next) => {
         session.endTime = getNow()
         session.duration = Math.floor((session.endTime - session.startTime) / 1000)
         await session.save()
-        activeTask.totalTime += session.duration
-        activeTask.status = "paused"
-        await activeTask.save()
+        // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+        await Task.findByIdAndUpdate(activeTask._id, {
+          $inc: { totalTime: session.duration },
+          $set: { status: "paused" }
+        })
       }
     }
 
@@ -376,8 +386,8 @@ exports.resumeTask = async (req, res, next) => {
       startTime: getNow()
     })
 
-    task.status = "in-progress"
-    await task.save()
+    // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+    await Task.findByIdAndUpdate(task._id, { $set: { status: "in-progress" } })
 
     const updatedTask = await Task.findById(task._id)
       .populate("createdBy", "name employeeId profilePhoto")
@@ -416,16 +426,20 @@ exports.completeTask = async (req, res, next) => {
       endTime: null
     })
 
+    const completedAt = getNow()
+    let extraTime = 0
     if (session) {
-      session.endTime = getNow()
+      session.endTime = completedAt
       session.duration = Math.floor((session.endTime - session.startTime) / 1000)
       await session.save()
-      task.totalTime += session.duration
+      extraTime = session.duration
     }
 
-    task.status = "completed"
-    task.completedAt = getNow()
-    await task.save()
+    // Use findByIdAndUpdate to avoid Mongoose full-doc validation on old tasks
+    await Task.findByIdAndUpdate(task._id, {
+      $inc: { totalTime: extraTime },
+      $set: { status: "completed", completedAt }
+    })
 
     const updatedTask = await Task.findById(task._id)
       .populate("createdBy", "name employeeId profilePhoto")
