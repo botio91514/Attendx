@@ -314,6 +314,37 @@ const runAbsentAlertCheck = async (settings, deadlineStr) => {
         );
 
         console.log(`🚨 [CRON] Marked ${emp.name} as ABSENT for ${todayStr}.`);
+        
+        // ── Auto-pause any in-progress tasks for absent user ──────
+        try {
+          const activeTasks = await Task.find({
+            assignedTo: emp._id,
+            status: 'in-progress'
+          });
+
+          for (const task of activeTasks) {
+            const session = await WorkSession.findOne({
+              taskId: task._id,
+              endTime: null
+            });
+            if (session) {
+              session.endTime = new Date();
+              session.duration = Math.floor((session.endTime - session.startTime) / 1000);
+              await session.save();
+              
+              await Task.findByIdAndUpdate(task._id, {
+                $inc: { totalTime: session.duration },
+                $set: { status: 'paused' }
+              });
+            } else {
+              await Task.findByIdAndUpdate(task._id, { $set: { status: 'paused' } });
+            }
+            console.log(`⏸️ [CRON] Absent auto-pause task "${task.title}" for user ${emp.name}`);
+          }
+        } catch (taskErr) {
+          console.error(`⚠️ [CRON] Absent task pause failed for ${emp.name}:`, taskErr);
+        }
+        // ────────────────────────────────────────────────────────
 
         // Send email notification
         if (emp.email) {
@@ -425,10 +456,16 @@ const startAutoCheckoutJob = () => {
                   Math.floor((session.endTime - session.startTime) / 1000)
                 );
                 await session.save();
-                task.totalTime += session.duration;
+                
+                // Use findByIdAndUpdate to bypass validation for older tasks (e.g. missing createdBy)
+                await Task.findByIdAndUpdate(task._id, {
+                  $inc: { totalTime: session.duration },
+                  $set: { status: 'paused' }
+                });
+              } else {
+                // If no session found but task is in-progress, just set status to paused
+                await Task.findByIdAndUpdate(task._id, { $set: { status: 'paused' } });
               }
-              task.status = 'paused';
-              await task.save();
               console.log(`⏸️ [CRON] Auto-paused task "${task.title}" for user ${record.userId}`);
             }
           } catch (taskErr) {

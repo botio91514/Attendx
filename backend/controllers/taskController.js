@@ -612,40 +612,69 @@ exports.getAllTasksAdmin = async (req, res, next) => {
 exports.getEmployeeTaskReport = async (req, res, next) => {
   try {
     const { userId } = req.params
-    const { startDate, endDate } = req.query
+    const { startDate, endDate } = req.query // "YYYY-MM-DD"
     const populateFields = "name employeeId profilePhoto"
 
-    const tasks = await Task.find({
-      assignedTo: userId,
-      date: { $gte: startDate, $lte: endDate }
-    })
-    .populate("createdBy", populateFields)
-    .populate("assignedTo", populateFields)
+    // 1. Define range boundaries in UTC (shifting to catch IST 00:00 to 23:59)
+    const rangeStart = new Date(`${startDate}T00:00:00Z`)
+    rangeStart.setMinutes(rangeStart.getMinutes() - 330)
+    
+    const rangeEnd = new Date(`${endDate}T23:59:59.999Z`)
+    rangeEnd.setMinutes(rangeEnd.getMinutes() - 330)
 
-    const tasksWithSessions = await Promise.all(tasks.map(async (task) => {
-      const sessions = await WorkSession.find({ taskId: task._id })
-      return { ...task.toObject(), sessions }
-    }))
+    const now = new Date()
 
-    const totalSeconds = tasksWithSessions.reduce((sum, t) => {
-      let taskTime = t.totalTime;
-      if (t.status === 'in-progress') {
-        const activeSession = t.sessions.find(s => !s.endTime);
-        if (activeSession) {
-          const runningSeconds = Math.floor((new Date() - new Date(activeSession.startTime)) / 1000);
-          taskTime += runningSeconds;
-        }
+    // 2. Find sessions for this user that overlap with the selected range
+    const sessionsInRange = await WorkSession.find({
+      userId,
+      $or: [
+        { startTime: { $gte: rangeStart, $lte: rangeEnd } },
+        { endTime: { $gte: rangeStart, $lte: rangeEnd } },
+        { endTime: null } // Potential running sessions
+      ]
+    }).sort({ startTime: -1 })
+
+    if (sessionsInRange.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: { tasks: [], totalSeconds: 0 },
+        message: "No activity found for this period"
+      })
+    }
+
+    const uniqueTaskIds = [...new Set(sessionsInRange.map(s => s.taskId.toString()))]
+    const tasks = await Task.find({ _id: { $in: uniqueTaskIds } })
+      .populate("createdBy", populateFields)
+      .populate("assignedTo", populateFields)
+
+    let totalSecondsInRange = 0
+    const tasksWithCalculatedTime = tasks.map(task => {
+      const taskSessions = sessionsInRange.filter(s => s.taskId.toString() === task._id.toString())
+      
+      // Calculate time spent EXACTLY within the range for this task
+      const timeOnTaskInRange = taskSessions.reduce((sum, s) => {
+        const effectiveStart = Math.max(s.startTime.getTime(), rangeStart.getTime())
+        const effectiveEnd = Math.min(s.endTime ? s.endTime.getTime() : now.getTime(), rangeEnd.getTime())
+        
+        const overlapMs = Math.max(0, effectiveEnd - effectiveStart)
+        return sum + Math.floor(overlapMs / 1000)
+      }, 0)
+
+      totalSecondsInRange += timeOnTaskInRange
+      return { 
+        ...task.toObject(), 
+        sessions: taskSessions,
+        timeSpentInPeriod: timeOnTaskInRange // Time specifically for this date range
       }
-      return sum + taskTime;
-    }, 0);
+    })
 
     res.status(200).json({
       success: true,
       data: {
-        tasks: tasksWithSessions,
-        totalSeconds
+        tasks: tasksWithCalculatedTime,
+        totalSeconds: totalSecondsInRange
       },
-      message: "Employee task report retrieved"
+      message: "Activity-based task report retrieved successfully"
     })
   } catch (error) {
     next(error)

@@ -248,10 +248,16 @@ const checkOut = async (req, res, next) => {
             (session.endTime - session.startTime) / 1000
           )
           await session.save()
-          task.totalTime += session.duration
+          
+          // Use findByIdAndUpdate to bypass validation for older tasks (e.g. missing createdBy)
+          await Task.findByIdAndUpdate(task._id, {
+            $inc: { totalTime: session.duration },
+            $set: { status: "paused" }
+          })
+        } else {
+          // If no session found but task is in-progress, just set status to paused
+          await Task.findByIdAndUpdate(task._id, { $set: { status: "paused" } })
         }
-        task.status = "paused"
-        await task.save()
       }
     } catch (taskErr) {
       console.error("Task auto-pause error on checkout:", taskErr)
@@ -659,11 +665,16 @@ const getAllAttendance = async (req, res, next) => {
     }).populate('userId', 'name email employeeId department designation');
 
     // 🏆 Step 3: Get approved leaves for the target date
+    // Use full-day boundaries to avoid timezone/boundary misses
+    const startOfTarget = new Date(targetDate);
+    const endOfTarget = new Date(targetDate);
+    endOfTarget.setHours(23, 59, 59, 999);
+
     const leaves = await Leave.find({
       status: 'approved',
       userId: { $in: employeeIds },
-      startDate: { $lte: targetDate },
-      endDate: { $gte: targetDate }
+      startDate: { $lte: endOfTarget },
+      endDate: { $gte: startOfTarget }
     });
 
     // 🏆 Step 4: Merge everything
@@ -775,11 +786,14 @@ const getAttendanceReport = async (req, res, next) => {
       .sort({ date: -1 })
       .populate('userId', 'name email employeeId department designation');
 
-    // 🏆 Step 2: Fetch corresponding Leaves to fill in the gaps
     const leaveQuery = { status: 'approved' };
     if (from && to) {
+      const startRange = new Date(from);
+      const endRange = new Date(to);
+      endRange.setHours(23, 59, 59, 999);
+
       leaveQuery.$or = [
-        { startDate: { $lte: to }, endDate: { $gte: from } }
+        { startDate: { $lte: endRange }, endDate: { $gte: startRange } }
       ];
     }
     if (userId) leaveQuery.userId = userId;
