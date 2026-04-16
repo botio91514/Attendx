@@ -200,7 +200,7 @@ const Announcements: React.FC = () => {
                  
                  <div className="flex flex-col items-end justify-between gap-4">
                     <button 
-                      onClick={() => handleDelete(notice._id)}
+                      onClick={() => handleDelete(notice)}
                       className="p-3 text-destructive hover:bg-destructive/10 rounded-full transition-colors opacity-0 group-hover:opacity-100"
                     >
                        <Trash2 className="w-5 h-5" />
