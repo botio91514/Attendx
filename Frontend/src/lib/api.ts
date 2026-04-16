@@ -94,5 +94,8 @@ export const api = {
   get: (endpoint: string) => apiRequest(endpoint, { method: 'GET' }),
   post: (endpoint: string, body: any) => apiRequest(endpoint, { method: 'POST', body: JSON.stringify(body) }),
   put: (endpoint: string, body: any) => apiRequest(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
-  delete: (endpoint: string) => apiRequest(endpoint, { method: 'DELETE' }),
+  delete: (endpoint: string, body?: any) => apiRequest(endpoint, { 
+    method: 'DELETE', 
+    ...(body ? { body: JSON.stringify(body) } : {}) 
+  }),
 };

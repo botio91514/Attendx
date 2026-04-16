@@ -367,6 +367,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       });
     });
+
+    // Task deleted by admin
+    socket.on('task:deleted', (data: any) => {
+      toast.error('❌ Task Cancelled', {
+        description: data.message || 'An active task has been removed by the administrator.',
+        duration: 8000
+      });
+    });
     };
 
     tryConnect();
@@ -382,6 +390,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         socket.off('leave:statusChanged');
         socket.off('notice:broadcast');
         socket.off('break:exceeded');
+        socket.off('task:deleted');
         disconnectSocket();
       }
     };

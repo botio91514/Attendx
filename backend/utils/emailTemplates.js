@@ -253,24 +253,40 @@ const lateArrivalTemplate = ({ employeeName, checkInTime, officeStartTime, minut
 // ─────────────────────────────────────────────
 // 9. PAYSLIP READY (Admin → Employee)
 // ─────────────────────────────────────────────
-const payslipTemplate = ({ employeeName, month, year, basicSalary, deductions, bonuses, netSalary, presentDays, absentDays, lateDays }) => emailWrapper(`
-  <h1 style="margin:0 0 12px;font-size:26px;font-weight:800;color:#0f172a;">Salary <span style="color:#10b981;">Processed</span></h1>
-  <p style="margin:0 0 28px;color:#64748b;font-size:15px;line-height:1.7;">Hello <strong>${employeeName}</strong>, your salary for <strong>${month} ${year}</strong> has been successfully credited.</p>
+const payslipTemplate = ({ employeeName, month, year, basicSalary, deductions, bonuses, netSalary, presentDays, absentDays, lateDays, paymentMethod, transactionId }) => emailWrapper(`
+  <div style="text-align:center;margin-bottom:24px;">
+    <div style="display:inline-block;background:#f0fdf4;padding:12px;border-radius:100%;border:1px solid #bbf7d0;">
+       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    </div>
+  </div>
+  <h1 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#0f172a;text-align:center;">Salary <span style="color:#10b981;">Disbursed</span></h1>
+  <p style="margin:0 0 28px;color:#64748b;font-size:15px;line-height:1.7;text-align:center;">Hello <strong>${employeeName}</strong>, your payroll for <strong>${month} ${year}</strong> has been successfully processed and paid.</p>
 
-  <!-- Net Salary Feature (Simplified Colors) -->
-  <div style="background-color:#f0fdf4;border:2px solid #bbf7d0;border-radius:24px;padding:32px;text-align:center;margin:24px 0;">
-    <p style="margin:0 0 4px;color:#166534;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">Net Payable Salary</p>
-    <p style="margin:0;font-size:42px;font-weight:900;color:#15803d;letter-spacing:-1px;">₹${netSalary.toLocaleString('en-IN')}</p>
+  <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 20px; padding: 32px 24px; text-align: center; margin: 24px 0; box-shadow: 0 10px 20px -5px rgba(16, 185, 129, 0.3);">
+    <p style="margin:0 0 4px;color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Final Net Payout</p>
+    <p style="margin:0;font-size:48px;font-weight:900;color:#ffffff;letter-spacing:-1.5px;">₹${netSalary.toLocaleString('en-IN')}</p>
+    <div style="display:inline-block;margin-top:12px;background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:100px;color:#ffffff;font-size:11px;font-weight:700;">Status: COMPLETED ✅</div>
   </div>
 
+  <h3 style="margin:32px 0 12px;font-size:14px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:1px;">Financial Breakdown</h3>
   ${infoCard([
-    { label: '💵 Basic Pay', value: `₹${basicSalary.toLocaleString('en-IN')}` },
-    { label: '🎁 Total Bonuses', value: `<span style="color:#10b981;">+₹${bonuses.toLocaleString('en-IN')}</span>` },
-    { label: '📉 Total Deductions', value: `<span style="color:#dc2626;">-₹${deductions.toLocaleString('en-IN')}</span>` },
-    { label: '✅ Days Tracked', value: `${presentDays} Present / ${absentDays} Absent` }
+    { label: '💵 Monthly Base', value: `₹${basicSalary.toLocaleString('en-IN')}` },
+    { label: '🎁 Additions (Bonus)', value: `<span style="color:#10b981;">+₹${(bonuses || 0).toLocaleString('en-IN')}</span>` },
+    { label: '📉 Deductions', value: `<span style="color:#dc2626;">-₹${(deductions || 0).toLocaleString('en-IN')}</span>` }
   ], '#10b981')}
 
-  ${premiumButton('Download Full Payslip', getLiveUrl('/dashboard'), '#10b981')}
+  <h3 style="margin:32px 0 12px;font-size:14px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:1px;">Payment & Attendance</h3>
+  ${infoCard([
+    { label: '🏦 Paid Via', value: paymentMethod || 'Online Transfer' },
+    { label: '🆔 Transaction Ref', value: transactionId || 'N/A' },
+    { label: '📅 Attendance Summary', value: `${presentDays} Present / ${absentDays} Absent` }
+  ], '#6366f1')}
+
+  <div style="margin-top:32px;padding:20px;background:#f8fafc;border-radius:12px;border-left:4px solid #6366f1;">
+     <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;"><strong>Note:</strong> This is an automated salary advice. For a detailed breakdown including daily clock-in/out times, please login to your employee portal.</p>
+  </div>
+
+  ${premiumButton('Login to Portal', getLiveUrl('/dashboard'), '#10b981')}
 `, '#10b981');
 
 // ─────────────────────────────────────────────

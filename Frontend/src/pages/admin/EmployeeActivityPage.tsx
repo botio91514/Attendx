@@ -14,18 +14,41 @@ import {
   ExternalLink,
   ChevronRight,
   TrendingUp,
-  History
+  History,
+  Pencil,
+  Trash2,
+  Edit3,
+  TimerReset
 } from "lucide-react"
 import { format, differenceInSeconds } from "date-fns"
 import { toast } from "sonner"
 import { 
   getEmployeeActivity, 
-  EmployeeActivityResponse 
+  EmployeeActivityResponse,
+  updateTask,
+  deleteTask 
 } from "@/lib/taskApi"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter 
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { cn } from "@/lib/utils"
 
 // Live Timer Component for individual sessions
@@ -61,6 +84,13 @@ export const EmployeeActivityPage: React.FC = () => {
   const [data, setData] = useState<EmployeeActivityResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Edit / Delete States
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [taskToEdit, setTaskToEdit] = useState<any>(null)
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const fetchData = useCallback(async () => {
     if (!employeeId) return
     try {
@@ -73,6 +103,43 @@ export const EmployeeActivityPage: React.FC = () => {
       setIsLoading(false)
     }
   }, [employeeId, selectedDate])
+
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return
+    try {
+      setIsProcessing(true)
+      await deleteTask(taskToDelete)
+      toast.success("Task deleted successfully")
+      fetchData()
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete task")
+    } finally {
+      setIsProcessing(false)
+      setIsDeleteDialogOpen(false)
+      setTaskToDelete(null)
+    }
+  }
+
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!taskToEdit) return
+    try {
+      setIsProcessing(true)
+      await updateTask(taskToEdit._id, {
+        title: taskToEdit.title,
+        description: taskToEdit.description,
+        priority: taskToEdit.priority,
+        totalTime: taskToEdit.totalTimeCombined // combined seconds
+      })
+      toast.success("Task updated successfully")
+      setIsEditDialogOpen(false)
+      fetchData()
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update task")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   useEffect(() => {
     fetchData()
@@ -102,6 +169,7 @@ export const EmployeeActivityPage: React.FC = () => {
 
   return (
     <div className="container max-w-5xl mx-auto py-8 px-6 space-y-8 min-h-screen bg-transparent">
+    <>
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Button 
@@ -240,6 +308,36 @@ export const EmployeeActivityPage: React.FC = () => {
                               {task.title}
                             </h3>
                           </div>
+
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="w-8 h-8 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/5"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTaskToEdit({
+                                  ...task,
+                                  totalTimeCombined: task.totalTime // The task model has the lifetime total
+                                });
+                                setIsEditDialogOpen(true);
+                              }}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="w-8 h-8 rounded-lg text-slate-400 hover:text-destructive hover:bg-destructive/5"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTaskToDelete(task._id);
+                                setIsDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                           
                           <div className="text-right shrink-0">
                             <div className="text-lg font-bold text-slate-900 tabular-nums">
@@ -290,6 +388,97 @@ export const EmployeeActivityPage: React.FC = () => {
           </div>
         </>
       )}
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Edit3 className="w-5 h-5 text-primary" /> Edit Task Information
+            </DialogTitle>
+          </DialogHeader>
+          
+          <form onSubmit={handleUpdateTask} className="space-y-4 py-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Title</label>
+              <Input 
+                value={taskToEdit?.title || ''} 
+                onChange={e => setTaskToEdit({...taskToEdit, title: e.target.value})}
+                className="rounded-xl border-slate-200 h-11"
+                required
+              />
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description</label>
+              <Textarea 
+                value={taskToEdit?.description || ''} 
+                onChange={e => setTaskToEdit({...taskToEdit, description: e.target.value})}
+                className="rounded-xl border-slate-200 min-h-[100px]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Priority</label>
+                  <Select 
+                    value={taskToEdit?.priority} 
+                    onValueChange={val => setTaskToEdit({...taskToEdit, priority: val})}
+                  >
+                    <SelectTrigger className="rounded-xl h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+               </div>
+               
+               <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Manual Time Adjust (Seconds)</label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      value={taskToEdit?.totalTimeCombined || 0} 
+                      onChange={e => setTaskToEdit({...taskToEdit, totalTimeCombined: Number(e.target.value)})}
+                      className="rounded-xl border-slate-200 h-11 pl-10"
+                    />
+                    <TimerReset className="w-4 h-4 absolute left-3 top-3.5 text-slate-300" />
+                  </div>
+               </div>
+            </div>
+
+            <DialogFooter className="pt-4">
+              <Button 
+                type="button" 
+                variant="ghost" 
+                onClick={() => setIsEditDialogOpen(false)}
+                className="rounded-xl font-bold"
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isProcessing}
+                className="rounded-xl font-bold bg-primary hover:bg-primary/90 px-8"
+              >
+                {isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog 
+        isOpen={isDeleteDialogOpen}
+        onClose={() => { setIsDeleteDialogOpen(false); setTaskToDelete(null); }}
+        onConfirm={handleDeleteTask}
+        title="Delete Work Item?"
+        message="This will permanently delete this task and all its associated work sessions. This action cannot be undone."
+        confirmLabel="Destroy Task"
+      />
+    </>
     </div>
   )
 }

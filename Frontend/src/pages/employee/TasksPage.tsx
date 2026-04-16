@@ -44,6 +44,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+import { getSocket } from "@/lib/socket"
 
 export const TasksPage: React.FC = () => {
   const { user } = useAuth()
@@ -107,6 +108,14 @@ export const TasksPage: React.FC = () => {
     fetchTasks()
     fetchEmployees()
   }, [fetchTasks, fetchEmployees])
+
+  useEffect(() => {
+    const s = getSocket();
+    if (s) {
+      s.on("task:deleted", () => fetchTasks());
+      return () => { s.off("task:deleted"); };
+    }
+  }, [fetchTasks])
 
   const sections = useMemo(() => {
     if (!tasks) return { today: [], backlog: [], upcoming: [], completed: [] }

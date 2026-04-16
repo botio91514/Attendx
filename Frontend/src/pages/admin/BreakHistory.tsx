@@ -28,6 +28,7 @@ const AdminBreakHistory: React.FC = () => {
     exceededCount: 0,
     avgDuration: 0
   });
+  const [policyLimit, setPolicyLimit] = useState(60);
 
   const [filters, setFilters] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -46,6 +47,7 @@ const AdminBreakHistory: React.FC = () => {
       const res = await api.get(`/attendance/admin/breaks?${query.toString()}`);
       if (res.success) {
         setBreaks(res.data.breaks || []);
+        if (res.data.policyLimit) setPolicyLimit(res.data.policyLimit);
 
         // Calculate basic stats for display
         const total = res.data.breaks.length;
@@ -131,7 +133,7 @@ const AdminBreakHistory: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {activeBreaks.map((b, i) => {
               const elapsed = Math.floor((new Date().getTime() - new Date(b.break.startTime).getTime()) / 60000);
-              const exceeded = elapsed > 60; // Assuming 60 for visual cue if policy not loaded per user
+              const exceeded = elapsed > policyLimit;
               return (
                 <motion.div
                   key={i}
@@ -236,7 +238,7 @@ const AdminBreakHistory: React.FC = () => {
                       <td className="px-5 py-4">
                         {b.exceededPolicy && (
                           <span className="text-xs font-bold text-destructive font-mono">
-                            +{b.durationMinutes - 60}m
+                            +{b.durationMinutes - policyLimit}m
                           </span>
                         )}
                       </td>

@@ -225,10 +225,14 @@ const getBreakHistory = async (req, res, next) => {
 
     const total = await Attendance.countDocuments(query);
 
+    const settings = await Settings.getSettings();
+    const policyLimit = settings.breakDurationMinutes || 60;
+
     res.status(200).json({
       success: true,
       data: {
         breaks: records,
+        policyLimit,
         pagination: {
           total,
           page: parseInt(page),

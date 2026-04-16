@@ -14,7 +14,8 @@ const {
   getAllTasksAdmin,
   getEmployeeTaskReport,
   getEmployees,
-  getEmployeeActivity
+  getEmployeeActivity,
+  updateTask
 } = require("../controllers/taskController")
 
 router.post("/",                          protect, createTask)
@@ -27,6 +28,7 @@ router.post("/:id/pause",                 protect, validateObjectId, pauseTask)
 router.post("/:id/resume",               protect, validateObjectId, resumeTask)
 router.post("/:id/complete",              protect, validateObjectId, completeTask)
 router.get("/admin/employee/:employeeId/activity", protect, isAdmin, getEmployeeActivity)
+router.put("/:id",                        protect, validateObjectId, updateTask)
 router.delete("/:id",                     protect, validateObjectId, deleteTask)
 
 module.exports = router

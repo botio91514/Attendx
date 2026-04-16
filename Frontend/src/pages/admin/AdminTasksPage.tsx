@@ -15,7 +15,9 @@ import {
   ChevronRight,
   TrendingUp,
   Download,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  ListTodo
 } from "lucide-react"
 import { format, startOfDay, endOfDay, isValid } from "date-fns"
 import { toast } from "sonner"
@@ -54,6 +56,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { createTask as apiCreateTask } from "@/lib/taskApi"
+
 // Live Timer Component for Grid
 const LiveTimer: React.FC<{ task: Task; startTime?: string }> = ({ task, startTime }) => {
   const { displayTime } = useTaskTimer(task, startTime)
@@ -78,6 +91,17 @@ export const AdminTasksPage: React.FC = () => {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [employees, setEmployees] = useState<TaskUser[]>([])
 
+  // Create Task State
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    assignedTo: "",
+    plannedDate: format(new Date(), "yyyy-MM-dd")
+  })
+
   const fetchLiveData = useCallback(async (dateToFetch?: string) => {
     try {
       const response = await getAllTasksAdmin(dateToFetch || selectedDate)
@@ -89,6 +113,32 @@ export const AdminTasksPage: React.FC = () => {
       setIsLoading(false)
     }
   }, [selectedDate])
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTask.assignedTo) {
+      toast.error("Please select an employee")
+      return
+    }
+    try {
+      setIsCreating(true)
+      await apiCreateTask(newTask)
+      toast.success("Task assigned successfully")
+      setIsCreateDialogOpen(false)
+      setNewTask({
+        title: "",
+        description: "",
+        priority: "medium",
+        assignedTo: "",
+        plannedDate: format(new Date(), "yyyy-MM-dd")
+      })
+      fetchLiveData()
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create task")
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -215,6 +265,107 @@ export const AdminTasksPage: React.FC = () => {
                 <RefreshCcw className={cn("w-4 h-4 text-slate-500", isLoading && "animate-spin")} />
               </Button>
             </div>
+
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="rounded-xl font-bold bg-primary hover:bg-primary/90 text-white gap-2 h-10 px-5 shadow-lg shadow-primary/20">
+                  <Plus className="w-4 h-4" /> New Task
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md bg-white rounded-3xl p-6 border-none shadow-2xl">
+                <DialogHeader className="pb-4 border-b">
+                  <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+                    <ListTodo className="w-5 h-5 text-primary" /> Assign New Task
+                  </DialogTitle>
+                </DialogHeader>
+                
+                <form onSubmit={handleCreateTask} className="space-y-4 pt-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Task Title</label>
+                    <Input 
+                      placeholder="Enter task name..."
+                      value={newTask.title}
+                      onChange={e => setNewTask({...newTask, title: e.target.value})}
+                      className="rounded-xl border-slate-200 h-11"
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Assign To</label>
+                    <Select 
+                      value={newTask.assignedTo} 
+                      onValueChange={val => setNewTask({...newTask, assignedTo: val})}
+                    >
+                      <SelectTrigger className="rounded-xl h-11">
+                        <SelectValue placeholder="Select Employee" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employees.map(emp => (
+                          <SelectItem key={emp._id} value={emp._id}>{emp.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Priority</label>
+                        <Select 
+                          value={newTask.priority} 
+                          onValueChange={val => setNewTask({...newTask, priority: val as any})}
+                        >
+                          <SelectTrigger className="rounded-xl h-11">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Planned Date</label>
+                        <Input 
+                          type="date"
+                          value={newTask.plannedDate}
+                          onChange={e => setNewTask({...newTask, plannedDate: e.target.value})}
+                          className="rounded-xl border-slate-200 h-11"
+                        />
+                     </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description (Optional)</label>
+                    <Textarea 
+                      placeholder="..."
+                      value={newTask.description}
+                      onChange={e => setNewTask({...newTask, description: e.target.value})}
+                      className="rounded-xl border-slate-200 min-h-[80px]"
+                    />
+                  </div>
+
+                  <DialogFooter className="pt-4">
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      onClick={() => setIsCreateDialogOpen(false)}
+                      className="rounded-xl font-bold"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={isCreating}
+                      className="rounded-xl font-bold bg-primary hover:bg-primary/90 px-8"
+                    >
+                      {isCreating ? <RefreshCcw className="w-4 h-4 animate-spin mr-2" /> : "Assign Task"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
             
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
               <Clock3 className="w-3 h-3" />

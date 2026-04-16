@@ -75,6 +75,7 @@ export const startTask = (id: string) => api.post(`/tasks/${id}/start`, {})
 export const pauseTask = (id: string) => api.post(`/tasks/${id}/pause`, {})
 export const resumeTask = (id: string) => api.post(`/tasks/${id}/resume`, {})
 export const completeTask = (id: string) => api.post(`/tasks/${id}/complete`, {})
+export const updateTask = (id: string, data: any) => api.put(`/tasks/${id}`, data)
 export const deleteTask = (id: string) => api.delete(`/tasks/${id}`)
 export const getAllTasksAdmin = (date?: string) => 
   api.get(`/tasks/admin/all${date ? `?date=${date}` : ""}`)

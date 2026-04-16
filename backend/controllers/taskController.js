@@ -498,7 +498,8 @@ exports.deleteTask = async (req, res, next) => {
       return res.status(403).json({ success: false, message: "Access forbidden — only the creator or an admin can delete this task." })
     }
 
-    if (task.status !== "todo") {
+    // Allow Admin to delete any task, but restrict regular users to 'todo' status only
+    if (req.user.role !== 'admin' && task.status !== "todo") {
       return res.status(400).json({ 
         success: false, 
         message: "Cannot delete a task that has already been started." 
@@ -508,6 +509,16 @@ exports.deleteTask = async (req, res, next) => {
     // Cleanup associated data (WorkSessions)
     await WorkSession.deleteMany({ taskId: req.params.id })
     await Task.findByIdAndDelete(req.params.id)
+
+    // Notify user via socket to stop any active timers for this task
+    try {
+      emitToUser(task.assignedTo.toString(), "task:deleted", {
+        taskId: task._id,
+        message: "This task has been deleted by an administrator."
+      })
+    } catch (err) {
+      console.error("Socket emit failed during task deletion:", err)
+    }
 
     res.status(200).json({ success: true, message: "Task and associated work logs deleted successfully" })
   } catch (error) {
@@ -790,6 +801,61 @@ exports.getEmployeeActivity = async (req, res, next) => {
         },
         tasks: groupedTasks
       }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+// ─────────────────────────────────────────────
+// FUNCTION 12: updateTask
+// ─────────────────────────────────────────────
+exports.updateTask = async (req, res, next) => {
+  try {
+    const { title, description, priority, plannedDate, totalTime } = req.body
+    const task = await Task.findById(req.params.id)
+
+    if (!task) {
+      return res.status(404).json({ success: false, message: "Task not found" })
+    }
+
+    // Only creator OR Admin can update
+    if (task.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: "Access forbidden" })
+    }
+
+    if (title) task.title = title
+    if (description !== undefined) task.description = description
+    if (priority) task.priority = priority
+    if (plannedDate) task.plannedDate = new Date(plannedDate)
+    
+    // Allow admin to manually adjust total time if needed (seconds)
+    if (req.user.role === 'admin' && typeof totalTime === 'number') {
+      const timeDiff = totalTime - task.totalTime
+      if (timeDiff !== 0) {
+        // Create an audit log session for this adjustment
+        await WorkSession.create({
+          taskId: task._id,
+          userId: task.assignedTo,
+          startTime: new Date(),
+          endTime: new Date(),
+          duration: timeDiff,
+          // We don't have isAdjustment in schema yet, but it will be saved in _doc
+          description: `Admin Adjustment by ${req.user.name}` 
+        })
+      }
+      task.totalTime = totalTime
+    }
+
+    await task.save()
+
+    const updatedTask = await Task.findById(task._id)
+      .populate("createdBy", "name employeeId profilePhoto")
+      .populate("assignedTo", "name employeeId profilePhoto")
+
+    res.status(200).json({
+      success: true,
+      data: updatedTask,
+      message: "Task updated successfully"
     })
   } catch (error) {
     next(error)

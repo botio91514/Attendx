@@ -5,6 +5,7 @@ const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
 const Leave = require('../models/Leave');
 const Holiday = require('../models/Holiday');
+const Task = require('../models/Task');
 const {
   getTodayDate,
   formatDate,
@@ -677,8 +678,17 @@ const getAllAttendance = async (req, res, next) => {
       endDate: { $gte: startOfTarget }
     });
 
-    // 🏆 Step 4: Merge everything
+    // 🏆 Step 4: Get Current Active Tasks for Live Monitoring
+    const activeTasks = await Task.find({
+      assignedTo: { $in: employeeIds },
+      status: 'in-progress'
+    }).populate('createdBy', 'name');
+
+    // 🏆 Step 5: Merge everything
     const combined = employees.map(emp => {
+      // Find current task (if any)
+      const activeTask = activeTasks.find(t => t.assignedTo.toString() === emp._id.toString());
+      
       // Find attendance record (if any)
       const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
       

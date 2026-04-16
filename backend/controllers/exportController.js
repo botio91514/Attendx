@@ -14,6 +14,8 @@ const Attendance = require('../models/Attendance');
 const Leave = require('../models/Leave');
 const Holiday = require('../models/Holiday');
 const LeaveBalance = require('../models/LeaveBalance');
+const Payroll = require('../models/Payroll');
+const Settings = require('../models/Settings');
 const { getMonthRange } = require('../utils/attendanceHelpers');
 
 // Helper: get date range from query params
@@ -85,6 +87,8 @@ const exportPayslipPDF = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const { month, year } = req.query;
+    const m = parseInt(month);
+    const y = parseInt(year);
 
     const employee = await User.findById(employeeId)
       .select('name email employeeId department role joiningDate baseSalary');
@@ -92,61 +96,86 @@ const exportPayslipPDF = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    // Reconstruct payroll data
-    const { startStr, endStr } = getMonthRange(parseInt(year), parseInt(month));
-    const startDate = new Date(startStr);
-    const endDate = new Date(endStr);
-
-    const holidays = await Holiday.find({ date: { $gte: startDate, $lte: endDate } });
-    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
-
-    let totalWorkingDays = 0;
-    let tempDate = new Date(startDate);
-    while (tempDate <= endDate) {
-      const day = tempDate.getDay();
-      if (day !== 0 && day !== 6 && !holidayDates.includes(tempDate.toISOString().split('T')[0])) {
-        totalWorkingDays++;
-      }
-      tempDate.setDate(tempDate.getDate() + 1);
-    }
-
-    const attendance = await Attendance.find({
-      userId: employeeId,
-      date: { $gte: startStr, $lte: endStr }
-    });
-
-    let p = 0, h = 0, l = 0, a = 0;
-    attendance.forEach(r => {
-      if (r.status === 'present') p++;
-      else if (r.status === 'late') { p++; l++; }
-      else if (r.status === 'half-day') h++;
-      else a++;
-    });
-
-    const dailyRate = totalWorkingDays > 0 ? (employee.baseSalary || 0) / totalWorkingDays : 0;
-    const payableDays = p + (h * 0.5);
-    
-    // Simulate payroll record
+    // 1. Check if persistent payroll record exists
+    const storedPayroll = await Payroll.findOne({ userId: employeeId, month: m, year: y });
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const monthName = monthNames[parseInt(month) - 1] || month;
-    
-    const payrollData = {
-      month: monthName,
-      year,
-      basicSalary: employee.baseSalary || 0,
-      bonus: 0,
-      absentDeduction: Math.abs(Math.round(((totalWorkingDays - payableDays) * dailyRate))),
-      lateDeduction: 0,
-      workingDays: totalWorkingDays,
-      presentDays: p,
-      absentDays: totalWorkingDays - payableDays,
-      lateDays: l,
-      onLeaveDays: 0
-    };
+    const monthName = monthNames[m - 1] || month;
+
+    const settings = await Settings.getSettings();
+    const workingDaysConfig = settings.workingDays || [1, 2, 3, 4, 5];
+
+    let payrollData;
+    let dateRangeEnd;
+
+    if (storedPayroll) {
+      // Use stored data (Professional way)
+      payrollData = {
+        month: monthName,
+        year: y.toString(),
+        basicSalary: storedPayroll.baseSalary,
+        bonus: storedPayroll.bonus || 0,
+        absentDeduction: Math.abs(storedPayroll.grossSalary - (storedPayroll.payableDays * storedPayroll.dailyRate)) || 0, // Approx
+        lateDeduction: 0,
+        otherDeductions: storedPayroll.deductions || 0,
+        workingDays: storedPayroll.workingDays,
+        presentDays: storedPayroll.presentDays,
+        absentDays: storedPayroll.absentDays,
+        lateDays: storedPayroll.lateDays,
+        netSalary: storedPayroll.netSalary,
+        onLeaveDays: 0
+      };
+      
+      const { endStr } = getMonthRange(y, m);
+      dateRangeEnd = new Date(endStr).getDate();
+    } else {
+      // Fallback: Dynamic calculation (for previews)
+      const { startStr, endStr } = getMonthRange(y, m);
+      const startDate = new Date(startStr);
+      const endDate = new Date(endStr);
+      dateRangeEnd = endDate.getDate();
+
+      const holidays = await Holiday.find({ date: { $gte: startDate, $lte: endDate } });
+      const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
+
+      let totalWorkingDays = 0;
+      let tempDate = new Date(startDate);
+      while (tempDate <= endDate) {
+        const day = tempDate.getDay();
+        if (workingDaysConfig.includes(day) && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
+        tempDate.setDate(tempDate.getDate() + 1);
+      }
+
+      const attendance = await Attendance.find({ userId: employeeId, date: { $gte: startStr, $lte: endStr } });
+      let p = 0, h = 0, l = 0, a = 0;
+      attendance.forEach(r => {
+        if (r.status === 'present') p++;
+        else if (r.status === 'late') { p++; l++; }
+        else if (r.status === 'half-day') h++;
+        else a++;
+      });
+
+      const dailyRate = totalWorkingDays > 0 ? (employee.baseSalary || 0) / totalWorkingDays : 0;
+      const payableDays = p + (h * 0.5);
+      
+      payrollData = {
+        month: monthName,
+        year,
+        basicSalary: employee.baseSalary || 0,
+        bonus: 0,
+        absentDeduction: Math.round(((totalWorkingDays - payableDays) * dailyRate)),
+        lateDeduction: 0,
+        workingDays: totalWorkingDays,
+        presentDays: p,
+        absentDays: totalWorkingDays - payableDays,
+        lateDays: l,
+        onLeaveDays: 0,
+        netSalary: Math.round(payableDays * dailyRate)
+      };
+    }
 
     const dateRange = { 
       from: `01 ${payrollData.month} ${year}`, 
-      to: `${endDate.getDate()} ${payrollData.month} ${year}` 
+      to: `${dateRangeEnd} ${payrollData.month} ${year}` 
     };
 
     await generatePayslipPDF(res, employee, payrollData, dateRange);
@@ -319,11 +348,14 @@ const exportBulkPayrollCSV = async (req, res) => {
     const holidays = await Holiday.find({ date: { $gte: new Date(startStr), $lte: new Date(endStr) } });
     const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
 
+    const settings = await Settings.getSettings();
+    const workingDaysConfig = settings.workingDays || [1, 2, 3, 4, 5];
+
     let totalWorkingDays = 0;
     let tempDate = new Date(startStr);
     while (tempDate <= new Date(endStr)) {
       const day = tempDate.getDay();
-      if (day !== 0 && day !== 6 && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
+      if (workingDaysConfig.includes(day) && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
       tempDate.setDate(tempDate.getDate() + 1);
     }
 
