@@ -32,7 +32,7 @@ const leaveSchema = new mongoose.Schema(
     },
     yearBreakdown: {
       type: Map,
-      of: Number,
+      of: [String],
       default: {}
     },
     reason: {

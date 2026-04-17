@@ -50,7 +50,7 @@ const attendanceSchema = new mongoose.Schema(
     breaks: [breakSchema],
     status: {
       type: String,
-      enum: ['present', 'absent', 'late', 'half-day'],
+      enum: ['present', 'absent', 'late', 'half-day', 'leave', 'holiday'],
       default: 'absent',
     },
     notes: {
