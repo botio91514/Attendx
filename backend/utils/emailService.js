@@ -40,13 +40,19 @@ const sendEmail = async ({ to, subject, html, text }) => {
       return;
     }
 
-    const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@attendx.com';
-    const fromName  = process.env.EMAIL_FROM_NAME || 'AttendX HR System';
+    const fromEmail = (process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@attendx.com').trim();
+    const fromName  = (process.env.EMAIL_FROM_NAME || 'AttendX HR System').trim();
+    const recipientEmail = (to || '').trim();
+
+    if (!recipientEmail.includes('@')) {
+      console.error(`[EMAIL] ❌ Aborting: Invalid recipient email format: "${recipientEmail}"`);
+      return;
+    }
 
     const payload = JSON.stringify({
       sender:   { name: fromName, email: fromEmail },
-      to:       [{ email: to }],
-      subject,
+      to:       [{ email: recipientEmail }],
+      subject:  (subject || 'Notification').trim(),
       htmlContent: html,
       ...(text ? { textContent: text } : {})
     });
@@ -59,11 +65,12 @@ const sendEmail = async ({ to, subject, html, text }) => {
           method: 'POST',
           headers: {
             'accept':       'application/json',
-            'api-key':      apiKey,
+            'api-key':      apiKey.trim(),
             'content-type': 'application/json',
             'content-length': Buffer.byteLength(payload)
           }
         },
+
         (res) => {
           let data = '';
           res.on('data', chunk => data += chunk);

@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { Download, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 
+import { cn } from '@/lib/utils';
+
 export interface ExportButtonProps {
   type: 'attendance' | 'payslip' | 'leave';
   employeeId?: string;
@@ -12,6 +14,7 @@ export interface ExportButtonProps {
   variant?: 'default' | 'outline' | 'secondary' | 'ghost' | 'link';
   size?: 'default' | 'sm' | 'lg' | 'icon';
   bulk?: boolean;
+  className?: string;
 }
 
 export const ExportButton: React.FC<ExportButtonProps> = ({ 
@@ -21,7 +24,8 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
   label = 'Export PDF',
   variant = 'default',
   size = 'default',
-  bulk = false
+  bulk = false,
+  className
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const { token } = useAuth();
@@ -89,7 +93,10 @@ export const ExportButton: React.FC<ExportButtonProps> = ({
       disabled={isLoading || (!bulk && !employeeId && type !== 'attendance')} 
       variant={variant} 
       size={size}
-      className={variant === 'default' ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""}
+      className={cn(
+        variant === 'default' ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "",
+        className
+      )}
     >
       {isLoading ? (
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
