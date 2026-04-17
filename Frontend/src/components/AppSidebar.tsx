@@ -14,6 +14,7 @@ const employeeNav = [
   { label: 'Attendance', icon: Clock, path: '/attendance' },
   { label: 'Tasks', icon: CheckSquare, path: '/tasks' },
   { label: 'My Leaves', icon: Palmtree, path: '/leaves' },
+  { label: 'Payroll', icon: CircleDollarSign, path: '/payroll' },
   { label: 'Holidays', icon: CalendarDays, path: '/holidays' },
   { label: 'Notice Board', icon: Megaphone, path: '/notices' },
   { label: 'Profile', icon: User, path: '/profile' },

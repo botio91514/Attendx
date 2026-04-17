@@ -5,8 +5,10 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Settings = require('../models/Settings');
 const Holiday = require('../models/Holiday');
+const Payroll = require('../models/Payroll');
+const AuditLog = require('../models/AuditLog');
 const {
-  calculateWorkingDays,
+  getLeaveBreakdown,
   getCurrentYear,
   dateRangesOverlap,
 } = require('../utils/leaveHelpers');
@@ -20,214 +22,125 @@ const { emitToAdmins, emitToUser } = require('../socket/socketManager.js');
 
 /**
  * @desc    Apply for leave
- * @route   POST /api/leave/apply
- * @access  Private
  */
 const applyLeave = async (req, res, next) => {
   try {
-    // Check validation errors
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array().map((err) => err.msg),
-      });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array().map(e => e.msg) });
 
     const { leaveType, startDate, endDate, reason } = req.body;
     const userId = req.user._id;
 
-    // 🏆 Fetch Dynamic Policies
+    // 1. Fetch Policies
     const [settings, holidays] = await Promise.all([
-      Settings.findOne(),
-      Holiday.find({ isActive: true }) // Only consider active holidays
+      Settings.getSettings(),
+      Holiday.find({ isActive: true })
     ]);
 
-    const workingDays = settings?.workingDays || [1, 2, 3, 4, 5]; // Fallback to Mon-Fri
-    const holidayDates = holidays.map(h => h.date);
+    const workingDays = settings.workingDays || [1, 2, 3, 4, 5, 6];
+    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
 
-    // Calculate total working days accurately
-    const totalDays = calculateWorkingDays(startDate, endDate, workingDays, holidayDates);
-
-    if (totalDays === 0) {
+    // 2. BACKDATED ABUSE PROTECTION
+    const startObj = new Date(startDate);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const diffDays = Math.ceil((today - startObj) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays > settings.backdatedLeaveLimit) {
       return res.status(400).json({
         success: false,
-        message: 'Selected dates are non-working days or holidays. Please select valid working days.',
-        errors: [],
+        message: `Backdated leave limit exceeded. You can only apply for leaves within ${settings.backdatedLeaveLimit} days of the past.`
       });
     }
 
-    // Check for overlapping approved/pending leaves
-    const overlappingLeaves = await Leave.find({
+    // 3. PAYROLL LOCK PROTECTION (Check all months involved)
+    const breakdownData = getLeaveBreakdown(startDate, endDate, workingDays, holidayDates);
+    if (breakdownData.total === 0) return res.status(400).json({ success: false, message: 'No working days found in the selected range.' });
+
+    for (const year in breakdownData.breakdown) {
+      const dates = breakdownData.breakdown[year];
+      const months = [...new Set(dates.map(d => new Date(d).getMonth() + 1))];
+      
+      for (const m of months) {
+        const finalized = await Payroll.findOne({ month: m, year: parseInt(year) });
+        if (finalized) {
+          return res.status(400).json({
+            success: false,
+            message: `Selected dates span into ${new Date(0, m-1).toLocaleString('default', { month: 'long' })} ${year}, which has a finalized payroll. Application blocked.`
+          });
+        }
+      }
+    }
+
+    // 4. PRECISE OVERLAP & DAILY LIMIT CHECK
+    const existingLeaves = await Leave.find({
       userId,
       status: { $in: ['pending', 'approved'] },
       $or: [
-        { startDate: { $lte: endDate }, endDate: { $gte: startDate } },
-      ],
+        { startDate: { $lte: endDate }, endDate: { $gte: startDate } }
+      ]
     });
 
-    if (overlappingLeaves.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have a leave request for the selected dates',
-        errors: [],
+    const datesToApply = breakdownData.breakdown;
+    const requestedAllDates = Object.values(datesToApply).flat();
+
+    for (const date of requestedAllDates) {
+      let dailyTotal = 0;
+      // Calculate how much leave is already taken on this specific date
+      existingLeaves.forEach(lv => {
+        const lvStart = lv.startDate.toISOString().split('T')[0];
+        const lvEnd = lv.endDate.toISOString().split('T')[0];
+        if (date >= lvStart && date <= lvEnd) {
+          // If it's a half-day, add 0.5, else 1
+          dailyTotal += lv.isHalfDay ? 0.5 : 1;
+        }
       });
-    }
 
-    // Check leave balance (skip for unpaid leave)
-    if (leaveType !== 'unpaid') {
-      const year = getCurrentYear();
-      let leaveBalance = await LeaveBalance.findOne({ userId, year });
-
-      if (!leaveBalance) {
-        // Create default balance
-        leaveBalance = await LeaveBalance.create({ userId, year });
-      }
-
-      if (leaveBalance[leaveType].remaining < totalDays) {
+      // If already 1 day full, block
+      if (dailyTotal >= 1) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient ${leaveType} leave balance. Available: ${leaveBalance[leaveType].remaining} days, Requested: ${totalDays} days`,
-          errors: [],
+          message: `You already have a full day leave or overlapping requests on ${date}.`
         });
       }
     }
 
-    // Create leave request
+    // 5. YEAR BOUNDARY BALANCE CHECK
+    if (leaveType !== 'unpaid') {
+      for (const year in breakdownData.breakdown) {
+        const count = breakdownData.breakdown[year].length;
+        let balance = await LeaveBalance.findOne({ userId, year: parseInt(year) });
+        if (!balance) balance = await LeaveBalance.create({ userId, year: parseInt(year) });
+        
+        if (balance[leaveType].remaining < count) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient ${leaveType} balance for year ${year}. Needed: ${count}, Available: ${balance[leaveType].remaining}`
+          });
+        }
+      }
+    }
+
+    // 6. Create Leave Record
     const leave = await Leave.create({
       userId,
       leaveType,
       startDate,
       endDate,
-      totalDays,
+      totalDays: breakdownData.total,
+      yearBreakdown: breakdownData.breakdown,
       reason,
-      status: 'pending',
+      status: 'pending'
     });
 
-    res.status(201).json({
-      success: true,
-      data: {
-        leave: await Leave.findById(leave._id).populate(
-          'userId',
-          'name email employeeId'
-        ),
-      },
-      message: 'Leave application submitted successfully',
-    });
+    res.status(201).json({ success: true, message: 'Leave request submitted successfully' });
 
-    // --- EMAIL NOTIFICATION (ADDED) ---
-    // Notify Admin about the new leave request
-    if (process.env.ADMIN_EMAIL) {
-      sendEmail({
-        to: process.env.ADMIN_EMAIL,
-        subject: `🔔 New Leave Request: ${req.user.name}`,
-        html: leaveRequestAdminTemplate({
-          employeeName: req.user.name,
-          leaveType,
-          startDate: new Date(startDate).toLocaleDateString('en-IN'),
-          endDate: new Date(endDate).toLocaleDateString('en-IN'),
-          reason,
-          totalDays
-        })
-      }).catch(err => console.error('Leave Request Admin Email failed:', err));
-    }
-
-    // Notify Employee that their request has been received (ADDED)
-    if (req.user.email) {
-        sendEmail({
-          to: req.user.email,
-          subject: '📝 Your Leave Request has been submitted!',
-          html: leaveRequestAdminTemplate({
-            employeeName: req.user.name,
-            leaveType,
-            startDate: new Date(startDate).toLocaleDateString('en-IN'),
-            endDate: new Date(endDate).toLocaleDateString('en-IN'),
-            reason,
-            totalDays
-          }).replace(`A new leave request has been submitted by <strong>${req.user.name}</strong>.`, `Your leave request for <strong>${leaveType}</strong> has been successfully submitted and is awaiting approval.`)
-        }).catch(err => console.error('Leave Request Employee Confirmation failed:', err));
-    }
-    // --- END EMAIL NOTIFICATION ---
-
-    // Notify Admins (System Notifications)
-    const admins = await User.find({ role: 'admin' });
-    const notifications = admins.map(admin => ({
-      recipient: admin._id,
-      sender: userId,
+    // Notifications
+    emitToAdmins('notification:new', {
       type: 'leave_request',
-      title: 'New Leave Request',
-      message: `${req.user.name} has applied for ${leaveType} leave from ${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}.`,
-      link: '/admin/leaves',
-      targetRole: 'admin',
-      referenceId: leave._id
-    }));
-    await Notification.insertMany(notifications);
-
-    // Socket emit — notify admins of new leave request
-    try {
-      console.log('[LEAVE] Emitting leave request to admins');
-      emitToAdmins('notification:new', {
-        type: 'leave_request',
-        title: '📋 New Leave Request',
-        message: `${req.user.name} has applied for ${leaveType} leave (${leave.totalDays} days).`,
-        link: '/admin/leaves'
-      });
-      console.log('[LEAVE] Emit successful');
-    } catch (err) {
-      console.error('[LEAVE] Emit failed:', err.message);
-    }
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get my leave history
- * @route   GET /api/leave/my
- * @access  Private
- */
-const getMyLeaves = async (req, res, next) => {
-  try {
-    const userId = req.user._id;
-    const { status, year, page = 1, limit = 10 } = req.query;
-
-    // Build query
-    const query = { userId };
-
-    if (status) {
-      query.status = status;
-    }
-
-    if (year) {
-      const startOfYear = new Date(`${year}-01-01`);
-      const endOfYear = new Date(`${year}-12-31`);
-      query.startDate = { $gte: startOfYear, $lte: endOfYear };
-    }
-
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [leaves, total] = await Promise.all([
-      Leave.find(query)
-        .sort({ appliedAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Leave.countDocuments(query),
-    ]);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        leaves,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
-        },
-      },
-      message: 'Leave history retrieved',
+      title: '📋 New Leave Request',
+      message: `${req.user.name} applied for ${leaveType} (${breakdownData.total} days).`,
+      link: '/admin/leaves'
     });
   } catch (error) {
     next(error);
@@ -235,500 +148,193 @@ const getMyLeaves = async (req, res, next) => {
 };
 
 /**
- * @desc    Get my leave balance
- * @route   GET /api/leave/balance
- * @access  Private
- */
-const getMyBalance = async (req, res, next) => {
-  try {
-    const userId = req.user._id;
-    const year = getCurrentYear();
-
-    let leaveBalance = await LeaveBalance.findOne({ userId, year });
-
-    if (!leaveBalance) {
-      // Create default balance
-      leaveBalance = await LeaveBalance.create({ userId, year });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        balance: leaveBalance.getSummary(),
-        year,
-      },
-      message: 'Leave balance retrieved',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Cancel a pending leave
- * @route   PUT /api/leave/cancel/:id
- * @access  Private
- */
-const cancelLeave = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user._id;
-
-    const leave = await Leave.findOne({ _id: id, userId });
-
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave request not found',
-        errors: [],
-      });
-    }
-
-    if (leave.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot cancel ${leave.status} leave request`,
-        errors: [],
-      });
-    }
-
-    leave.status = 'cancelled';
-    await leave.save();
-
-    res.status(200).json({
-      success: true,
-      data: { leave },
-      message: 'Leave request cancelled successfully',
-    });
-
-    // Notify Admins
-    const admins = await User.find({ role: 'admin' });
-    const notifications = admins.map(admin => ({
-      recipient: admin._id,
-      sender: userId,
-      type: 'leave_request',
-      title: 'Leave Request Cancelled',
-      message: `${req.user.name} has cancelled their ${leave.leaveType} leave request from ${new Date(leave.startDate).toLocaleDateString()}.`,
-      link: '/admin/leaves',
-      targetRole: 'admin'
-    }));
-    await Notification.insertMany(notifications);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get all leave requests (Admin only)
- * @route   GET /api/leave/admin/all
- * @access  Private/Admin
- */
-const getAllLeaves = async (req, res, next) => {
-  try {
-    const { status, month, year, page = 1, limit = 20 } = req.query;
-
-    // Build query
-    const query = {};
-
-    if (status) {
-      query.status = status;
-    }
-
-    if (month && year) {
-      const startOfMonth = new Date(`${year}-${month}-01`);
-      const endOfMonth = new Date(startOfMonth);
-      endOfMonth.setMonth(endOfMonth.getMonth() + 1);
-      query.startDate = { $gte: startOfMonth, $lt: endOfMonth };
-    } else if (year) {
-      const startOfYear = new Date(`${year}-01-01`);
-      const endOfYear = new Date(`${year}-12-31`);
-      query.startDate = { $gte: startOfYear, $lte: endOfYear };
-    }
-
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [leaves, total] = await Promise.all([
-      Leave.find(query)
-        .sort({ appliedAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .populate('userId', 'name email employeeId department designation'),
-      Leave.countDocuments(query),
-    ]);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        leaves,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit)),
-        },
-      },
-      message: 'All leave requests retrieved',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Approve a leave request (Admin only)
- * @route   PUT /api/leave/admin/:id/approve
- * @access  Private/Admin
+ * @desc    Approve leave (Hardened)
  */
 const approveLeave = async (req, res, next) => {
   try {
     const { id } = req.params;
     const adminId = req.user._id;
 
-    const leave = await Leave.findById(id).populate('userId', 'name email');
+    const leave = await Leave.findById(id).populate('userId');
+    if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (leave.status !== 'pending') return res.status(400).json({ success: false, message: `Request is already ${leave.status}` });
 
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave request not found',
-        errors: [],
-      });
+    // 1. PAYROLL LOCK PROTECTION (Check again)
+    for (let [year, dates] of leave.yearBreakdown) {
+      const months = [...new Set(dates.map(d => new Date(d).getMonth() + 1))];
+      for (const m of months) {
+        const finalized = await Payroll.findOne({ month: m, year: parseInt(year) });
+        if (finalized) {
+          return res.status(400).json({
+            success: false,
+            message: 'This leave belongs to a finalized payroll period. Please unlock payroll to proceed.'
+          });
+        }
+      }
     }
 
-    if (leave.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Leave request is already ${leave.status}`,
-        errors: [],
-      });
-    }
-
-    // Deduct leave balance (skip for unpaid leave)
+    // 2. ATOMIC BALANCE DEDUCTION
     if (leave.leaveType !== 'unpaid') {
-      const year = new Date(leave.startDate).getFullYear();
-      let leaveBalance = await LeaveBalance.findOne({
-        userId: leave.userId._id,
-        year,
-      });
+      for (let [year, dates] of leave.yearBreakdown) {
+        const count = dates.length;
+        const result = await LeaveBalance.findOneAndUpdate(
+          {
+            userId: leave.userId._id,
+            year: parseInt(year),
+            [`${leave.leaveType}.remaining`]: { $gte: count }
+          },
+          { 
+            $inc: { [`${leave.leaveType}.used`]: count, [`${leave.leaveType}.remaining`]: -count } 
+          },
+          { new: true }
+        );
 
-      if (!leaveBalance) {
-        leaveBalance = await LeaveBalance.create({ userId: leave.userId._id, year });
+        if (!result) {
+          return res.status(400).json({
+            success: false,
+            message: `Approval failed: Insufficient ${leave.leaveType} balance in year ${year} (Atomic check failed).`
+          });
+        }
       }
-
-      if (leaveBalance[leave.leaveType].remaining < leave.totalDays) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient ${leave.leaveType} leave balance for this employee`,
-          errors: [],
-        });
-      }
-
-      leaveBalance.useLeave(leave.leaveType, leave.totalDays);
-      await leaveBalance.save();
     }
 
-    // Approve leave
+    // 3. Update Status
     leave.status = 'approved';
     leave.reviewedBy = adminId;
     leave.reviewedAt = new Date();
     await leave.save();
 
-    // 🌊 SYNC ATTENDANCE: Update any existing 'absent' records to 'leave'
-    try {
-      const Attendance = require('../models/Attendance');
-      const start = new Date(leave.startDate);
-      const end = new Date(leave.endDate);
-
-      // Loop through each date in the leave range
-      let curr = new Date(start);
-      while (curr <= end) {
-        const dateStr = curr.toISOString().split('T')[0];
-        
-        // Find existing 'absent' record for this user/date
+    // 4. SYNC ATTENDANCE
+    const Attendance = require('../models/Attendance');
+    for (let [year, dates] of leave.yearBreakdown) {
+      for (const dateStr of dates) {
         await Attendance.findOneAndUpdate(
-          { 
-            userId: leave.userId._id, 
-            date: dateStr, 
-            status: 'absent' 
-          },
-          { 
-            $set: { 
-              status: 'leave',
-              notes: `[Status adjusted: Leave approved on ${new Date().toLocaleDateString()}]`
-            } 
-          }
+          { userId: leave.userId._id, date: dateStr, status: 'absent' },
+          { $set: { status: 'leave', notes: `Converted from absent (Leave ID: ${id})` } }
         );
-        curr.setDate(curr.getDate() + 1);
       }
-    } catch (syncErr) {
-      console.error('❌ Failed to sync attendance on leave approval:', syncErr);
     }
 
-    res.status(200).json({
-      success: true,
-      data: {
-        leave: await Leave.findById(id).populate(
-          'userId',
-          'name email employeeId'
-        ),
-      },
-      message: 'Leave request approved successfully',
+    // 5. Audit Log
+    await AuditLog.create({
+      action: 'LEAVE_APPROVE',
+      performedBy: adminId,
+      details: `Approved ${leave.leaveType} leave for ${leave.userId.name} (${leave.totalDays} days)`
     });
 
-    // --- EMAIL NOTIFICATION (ADDED) ---
-    // Notify Employee about leave approval
-    if (leave.userId && leave.userId.email) {
-      sendEmail({
-        to: leave.userId.email,
-        subject: '🎉 Your Leave Request has been Approved',
-        html: leaveApprovedTemplate({
-          employeeName: leave.userId.name,
-          leaveType: leave.leaveType,
-          startDate: new Date(leave.startDate).toLocaleDateString('en-IN'),
-          endDate: new Date(leave.endDate).toLocaleDateString('en-IN'),
-          totalDays: leave.totalDays,
-          adminComment: '' // Can add specific comment if needed
-        })
-      }).catch(err => console.error('Leave Approval Email failed:', err));
-    }
-    // --- END EMAIL NOTIFICATION ---
+    res.status(200).json({ success: true, message: 'Leave request approved' });
 
-    // ✅ Clean Up Admin Notifications (Mark as read for everyone)
-    await Notification.updateMany(
-      { referenceId: id, type: 'leave_request' },
-      { $set: { isRead: true } }
-    );
-
-    // Notify Employee (System Notifications)
-    await Notification.create({
-      recipient: leave.userId._id,
-      sender: adminId,
+    // Notification
+    emitToUser(leave.userId._id.toString(), 'notification:new', {
       type: 'leave_approved',
-      title: 'Leave Approved',
-      message: `Your ${leave.leaveType} leave request from ${new Date(leave.startDate).toLocaleDateString()} has been approved.`,
-      link: '/leaves',
-      targetRole: 'employee'
+      title: '✅ Leave Approved',
+      message: `Your ${leave.leaveType} leave has been approved.`,
+      link: '/leaves'
     });
-
-    try {
-      console.log('[LEAVE] Emitting approval to employee:', leave.userId._id.toString());
-      emitToUser(leave.userId._id.toString(), 'notification:new', {
-        type: 'leave_approved',
-        title: '✅ Leave Approved',
-        message: `Your ${leave.leaveType} leave has been approved.`,
-        link: '/leaves'
-      });
-      emitToUser(leave.userId._id.toString(), 'leave:statusChanged', {
-        leaveId: leave._id,
-        status: 'approved'
-      });
-    } catch (err) {
-      console.error('[LEAVE] Approval emit failed:', err.message);
-    }
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * @desc    Reject a leave request (Admin only)
- * @route   PUT /api/leave/admin/:id/reject
- * @access  Private/Admin
+ * @desc    Reject leave
  */
 const rejectLeave = async (req, res, next) => {
   try {
-    // Check validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array().map((err) => err.msg),
-      });
-    }
-
     const { id } = req.params;
     const { adminComment } = req.body;
     const adminId = req.user._id;
 
-    const leave = await Leave.findById(id).populate('userId', 'name email');
+    const leave = await Leave.findById(id).populate('userId');
+    if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (leave.status !== 'pending') return res.status(400).json({ success: false, message: `Request is already ${leave.status}` });
 
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: 'Leave request not found',
-        errors: [],
-      });
-    }
-
-    if (leave.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Leave request is already ${leave.status}`,
-        errors: [],
-      });
-    }
-
-    // Reject leave
     leave.status = 'rejected';
+    leave.adminComment = adminComment;
     leave.reviewedBy = adminId;
     leave.reviewedAt = new Date();
-    if (adminComment) {
-      leave.adminComment = adminComment;
-    }
     await leave.save();
 
-    res.status(200).json({
-      success: true,
-      data: {
-        leave: await Leave.findById(id).populate(
-          'userId',
-          'name email employeeId'
-        ),
-      },
-      message: 'Leave request rejected',
+    await AuditLog.create({
+      action: 'LEAVE_REJECT',
+      performedBy: adminId,
+      details: `Rejected ${leave.leaveType} leave for ${leave.userId.name}. Reason: ${adminComment || 'None'}`
     });
 
-    // --- EMAIL NOTIFICATION (ADDED) ---
-    // Notify Employee about leave rejection
-    if (leave.userId && leave.userId.email) {
-      sendEmail({
-        to: leave.userId.email,
-        subject: '⚠️ Notification: Leave Request Update',
-        html: leaveRejectedTemplate({
-          employeeName: leave.userId.name,
-          leaveType: leave.leaveType,
-          startDate: new Date(leave.startDate).toLocaleDateString('en-IN'),
-          endDate: new Date(leave.endDate).toLocaleDateString('en-IN'),
-          adminComment: adminComment
-        })
-      }).catch(err => console.error('Leave Rejection Email failed:', err));
-    }
-    // --- END EMAIL NOTIFICATION ---
-
-    // ✅ Clean Up Admin Notifications
-    await Notification.updateMany(
-      { referenceId: id, type: 'leave_request' },
-      { $set: { isRead: true } }
-    );
-
-    // Notify Employee (System Notifications)
-    await Notification.create({
-      recipient: leave.userId._id,
-      sender: adminId,
-      type: 'leave_rejected',
-      title: 'Leave Rejected',
-      message: `Your ${leave.leaveType} leave request from ${new Date(leave.startDate).toLocaleDateString()} was rejected. ${adminComment ? `Reason: ${adminComment}` : ''}`,
-      link: '/leaves',
-      targetRole: 'employee'
-    });
-
-    try {
-      emitToUser(leave.userId._id.toString(), 'notification:new', {
-        type: 'leave_rejected',
-        title: '❌ Leave Not Approved',
-        message: `Your ${leave.leaveType} leave was not approved.`,
-        link: '/leaves'
-      });
-      emitToUser(leave.userId._id.toString(), 'leave:statusChanged', {
-        leaveId: leave._id,
-        status: 'rejected'
-      });
-    } catch (err) {
-      console.error('[LEAVE] Rejection emit failed:', err.message);
-    }
+    res.status(200).json({ success: true, message: 'Leave request rejected' });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * @desc    Get employee leave balance (Admin only)
- * @route   GET /api/leave/admin/balance/:userId
- * @access  Private/Admin
- */
+const getMyLeaves = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const leaves = await Leave.find({ userId }).sort({ appliedAt: -1 });
+    res.status(200).json({ success: true, data: { leaves } });
+  } catch (error) { next(error); }
+};
+
+const getMyBalance = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const year = getCurrentYear();
+    let balance = await LeaveBalance.findOne({ userId, year });
+    if (!balance) balance = await LeaveBalance.create({ userId, year });
+    res.status(200).json({ success: true, data: { balance: balance.getSummary(), year } });
+  } catch (error) { next(error); }
+};
+
+const getAllLeaves = async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    const query = status ? { status } : {};
+    const leaves = await Leave.find(query)
+      .populate('userId', 'name email employeeId department')
+      .sort({ appliedAt: -1 });
+    res.status(200).json({ success: true, data: { leaves } });
+  } catch (error) { next(error); }
+};
+
+const cancelLeave = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const leave = await Leave.findOne({ _id: id, userId: req.user._id });
+    if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
+    if (leave.status !== 'pending') return res.status(400).json({ success: false, message: 'Can only cancel pending requests' });
+
+    leave.status = 'cancelled';
+    await leave.save();
+    res.status(200).json({ success: true, message: 'Leave request cancelled' });
+  } catch (error) { next(error); }
+};
+
 const getEmployeeBalance = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const year = req.query.year || getCurrentYear();
-
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found',
-        errors: [],
-      });
-    }
-
-    let leaveBalance = await LeaveBalance.findOne({ userId, year });
-
-    if (!leaveBalance) {
-      // Create default balance
-      leaveBalance = await LeaveBalance.create({ userId, year });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        employee: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          employeeId: user.employeeId,
-        },
-        balance: leaveBalance.getSummary(),
-        year,
-      },
-      message: 'Employee leave balance retrieved',
-    });
-  } catch (error) {
-    next(error);
-  }
+    const year = getCurrentYear();
+    let balance = await LeaveBalance.findOne({ userId, year });
+    if (!balance) balance = await LeaveBalance.create({ userId, year });
+    res.status(200).json({ success: true, data: { balance: balance.getSummary(), year } });
+  } catch (error) { next(error); }
 };
 
 // Validation rules
 const applyLeaveValidation = [
-  body('leaveType')
-    .notEmpty()
-    .withMessage('Leave type is required')
-    .isIn(['sick', 'casual', 'earned', 'unpaid'])
-    .withMessage('Invalid leave type'),
-  body('startDate')
-    .notEmpty()
-    .withMessage('Start date is required')
-    .isISO8601()
-    .withMessage('Start date must be a valid date'),
-  body('endDate')
-    .notEmpty()
-    .withMessage('End date is required')
-    .isISO8601()
-    .withMessage('End date must be a valid date'),
-  body('reason')
-    .notEmpty()
-    .withMessage('Reason is required')
-    .isLength({ max: 1000 })
-    .withMessage('Reason cannot exceed 1000 characters'),
+  body('leaveType').isIn(['sick', 'casual', 'religious', 'unpaid']),
+  body('startDate').isISO8601(),
+  body('endDate').isISO8601(),
+  body('reason').notEmpty()
 ];
 
 const myLeavesValidation = [
-  query('status')
-    .optional()
-    .isIn(['pending', 'approved', 'rejected', 'cancelled'])
-    .withMessage('Invalid status'),
-  query('year')
-    .optional()
-    .isInt({ min: 2000, max: 2100 })
-    .withMessage('Year must be between 2000 and 2100'),
+  query('status').optional().isIn(['pending', 'approved', 'rejected', 'cancelled']),
+  query('year').optional().isInt({ min: 2000, max: 2100 })
 ];
 
 const rejectLeaveValidation = [
-  param('id').isMongoId().withMessage('Invalid leave ID'),
-  body('adminComment')
-    .optional()
-    .isLength({ max: 500 })
-    .withMessage('Admin comment cannot exceed 500 characters'),
+  param('id').isMongoId(),
+  body('adminComment').optional().isLength({ max: 500 })
 ];
 
 module.exports = {
@@ -742,5 +348,5 @@ module.exports = {
   getEmployeeBalance,
   applyLeaveValidation,
   myLeavesValidation,
-  rejectLeaveValidation,
+  rejectLeaveValidation
 };

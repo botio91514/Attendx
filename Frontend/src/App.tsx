@@ -12,6 +12,7 @@ import Leaves from "@/pages/employee/Leaves";
 import Profile from "@/pages/employee/Profile";
 import Holidays from "@/pages/employee/Holidays";
 import EmployeeNoticeBoard from '@/pages/employee/NoticeBoard';
+import EmployeePayroll from '@/pages/employee/Payroll';
 import AdminOverview from "@/pages/admin/Overview";
 import LiveAttendance from "@/pages/admin/LiveAttendance";
 import Reports from "@/pages/admin/Reports";
@@ -70,6 +71,7 @@ const AppWithAuth = () => {
               <Route path="/notices" element={<EmployeeNoticeBoard />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/payroll" element={<EmployeePayroll />} />
             </Route>
 
             {/* Admin routes */}

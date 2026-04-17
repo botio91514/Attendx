@@ -15,6 +15,11 @@ const {
 const { sendEmail } = require('../utils/emailService');
 const { lateArrivalTemplate } = require('../utils/emailTemplates');
 const { emitToAdmins } = require('../socket/socketManager.js');
+const { 
+  getISTDateString, 
+  getISTMinutesFromMidnight, 
+  formatISTTime 
+} = require('../utils/timeUtils');
 
 /**
  * @desc    Check-in for the day
@@ -24,7 +29,7 @@ const { emitToAdmins } = require('../socket/socketManager.js');
 const checkIn = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const today = getTodayDate();
+    const today = getISTDateString();
     const now = new Date();
 
     // Fetch dynamic settings
@@ -50,27 +55,16 @@ const checkIn = async (req, res, next) => {
       });
     }
 
-    // Clean up any stale shell document (no checkIn) that could block the upsert
-    // This fixes E11000 when partial records were previously written to the DB
     if (existing && !existing.checkIn) {
       await Attendance.deleteOne({ _id: existing._id });
     }
 
-    // 🛠️ Timezone-Aware Calculation (Fixed for IST/Local)
-    // Convert current time to local HH:MM for comparison
-    const currentTimeStr = now.toLocaleTimeString('en-US', { 
-      timeZone: 'Asia/Kolkata', 
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    // 🛠️ Timezone-Aware Calculation using centralized utility
+    const currentTotalMin = getISTMinutesFromMidnight(now);
     
-    // Convert both to total minutes from midnight for direct comparison
-    const [currH, currM] = currentTimeStr.split(':').map(Number);
     const [startH, startM] = (settings?.officeStartTime || '09:15').split(':').map(Number);
     const grace = settings?.lateGracePeriod || 0;
     
-    const currentTotalMin = currH * 60 + currM;
     const thresholdTotalMin = startH * 60 + startM + grace;
     
     const computedStatus = currentTotalMin > thresholdTotalMin ? 'late' : 'present';
@@ -120,6 +114,8 @@ const checkIn = async (req, res, next) => {
     }
     // --- END EMAIL NOTIFICATION ---
 
+    const formattedTime = formatISTTime(now);
+
     // Fire-and-forget admin notifications after responding
     const admins = await User.find({ role: 'admin' });
     if (admins.length > 0) {
@@ -128,7 +124,7 @@ const checkIn = async (req, res, next) => {
         sender: userId,
         type: 'check_in',
         title: attendance.status === 'late' ? 'Late Check-in' : 'New Check-in',
-        message: `${req.user.name} checked in at ${now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })} (${attendance.status.toUpperCase()})`,
+        message: `${req.user.name} checked in at ${formattedTime} (${attendance.status.toUpperCase()})`,
         link: '/admin/live',
         targetRole: 'admin'
       }));

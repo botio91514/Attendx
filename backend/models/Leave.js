@@ -10,7 +10,7 @@ const leaveSchema = new mongoose.Schema(
     },
     leaveType: {
       type: String,
-      enum: ['sick', 'casual', 'earned', 'unpaid'],
+      enum: ['sick', 'casual', 'religious', 'unpaid'],
       required: [true, 'Leave type is required'],
     },
     startDate: {
@@ -25,6 +25,15 @@ const leaveSchema = new mongoose.Schema(
       type: Number,
       required: [true, 'Total days is required'],
       min: [0.5, 'Minimum leave is 0.5 day'],
+    },
+    isHalfDay: {
+      type: Boolean,
+      default: false
+    },
+    yearBreakdown: {
+      type: Map,
+      of: Number,
+      default: {}
     },
     reason: {
       type: String,
@@ -62,35 +71,15 @@ const leaveSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for common queries
+// Indexes
 leaveSchema.index({ userId: 1, status: 1 });
-leaveSchema.index({ userId: 1, startDate: -1 });
-leaveSchema.index({ status: 1, startDate: -1 });
-leaveSchema.index({ userId: 1, leaveType: 1 });
-
-// Compound index for overlap checking
 leaveSchema.index({ userId: 1, startDate: 1, endDate: 1 });
 
-// Pre-save middleware to validate dates
 leaveSchema.pre('save', function (next) {
-  // Ensure end date is not before start date
   if (this.endDate < this.startDate) {
     return next(new Error('End date cannot be before start date'));
   }
-
-  // Set reviewedAt when status changes from pending
-  if (this.isModified('status') && this.status !== 'pending' && !this.reviewedAt) {
-    this.reviewedAt = new Date();
-  }
-
   next();
 });
-
-// Method to check if leave overlaps with another date range
-leaveSchema.methods.overlapsWith = function (startDate, endDate) {
-  return (
-    this.startDate <= endDate && this.endDate >= startDate
-  );
-};
 
 module.exports = mongoose.model('Leave', leaveSchema);

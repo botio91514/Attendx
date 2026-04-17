@@ -15,7 +15,7 @@ const settingsSchema = new mongoose.Schema({
   },
   halfDayThreshold: {
     type: Number,
-    default: 4, // hours for half day
+    default: 5, // hours for half day
   },
   maxBreakLimit: {
     type: Number,
@@ -26,6 +26,11 @@ const settingsSchema = new mongoose.Schema({
   workingDays: {
     type: [Number],
     default: [1, 2, 3, 4, 5, 6], // Mon-Sat (0=Sun, 1=Mon, ..., 6=Sat)
+  },
+  backdatedLeaveLimit: {
+    type: Number,
+    default: 3, 
+    min: 0
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

@@ -94,6 +94,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
+    leavingDate: {
+      type: Date,
+      default: null
+    },
     emergencyContact: {
       name: { type: String, default: null },
       phone: { type: String, default: null },

@@ -423,9 +423,10 @@ const Payroll: React.FC = () => {
                                    <div className="flex gap-1.5 items-center">
                                       <div className="px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold border border-success/20" title="Present">{entry.stats.present}P</div>
                                       <div className="px-1.5 py-0.5 rounded bg-warning/10 text-warning text-[10px] font-bold border border-warning/20" title="Half-days">{entry.stats.halfDay}H</div>
+                                      <div className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[10px] font-bold border border-blue-500/20" title="Approved Leaves">{entry.stats.leave || 0}L</div>
                                       <div className="px-1.5 py-0.5 rounded bg-destructive/10 text-destructive text-[10px] font-bold border border-destructive/20" title="Absences">{entry.stats.absent}A</div>
                                    </div>
-                                   <span className="text-[10px] font-mono text-muted-foreground">₹{entry.calculations.dailyRate}/day</span>
+                                   <span className="text-[10px] font-mono text-muted-foreground">₹{entry.calculations.dailyRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}/day</span>
                                 </div>
                              </td>
                              <td className="px-5 py-4">

@@ -11,11 +11,8 @@ const startBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
     
-    // Get today's date boundaries in IST (Bug 2B / Fix A)
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istNow = new Date(now.getTime() + istOffset);
-    const today = istNow.toISOString().split('T')[0];
+    const { getISTDateString } = require('../utils/timeUtils');
+    const today = getISTDateString();
 
     // 1. Find today's attendance record
     const attendance = await Attendance.findOne({ userId, date: today });

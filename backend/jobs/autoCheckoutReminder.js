@@ -7,27 +7,21 @@ const Task = require('../models/Task');
 const WorkSession = require('../models/WorkSession');
 const { sendEmail } = require('../utils/emailService');
 const { checkoutReminderTemplate, absentAlertTemplate } = require('../utils/emailTemplates');
+const { 
+  getISTDateString, 
+  toIST, 
+  formatISTTime 
+} = require('../utils/timeUtils');
 
 // ─────────────────────────────────────────────
 // HELPER: Get today's date string in IST (YYYY-MM-DD)
 // ─────────────────────────────────────────────
-const getTodayIST = () => {
-  const now = new Date();
-  const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
-  const [m, d, y] = now.toLocaleDateString('en-US', options).split('/');
-  return `${y}-${m}-${d}`;
-};
+const getTodayIST = () => getISTDateString();
 
 // ─────────────────────────────────────────────
 // HELPER: Format a Date to IST time string HH:MM AM/PM
 // ─────────────────────────────────────────────
-const toISTTimeStr = (date) =>
-  new Date(date).toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+const toISTTimeStr = (date) => formatISTTime(date);
 
 // ─────────────────────────────────────────────
 // HELPER: Format today's date nicely for email
@@ -47,8 +41,8 @@ const toISTDateStr = (dateStr) => {
 // HELPER: Check if today is a configured working day
 // ─────────────────────────────────────────────
 const isTodayWorkingDay = (workingDays) => {
-  const now = new Date();
-  const dayOfWeek = new Date(now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })).getDay();
+  const istNow = toIST();
+  const dayOfWeek = istNow.getUTCDay();
   return workingDays.includes(dayOfWeek);
 };
 
@@ -219,12 +213,11 @@ const startAbsentAlertJob = async () => {
       const [startHour, startMin] = settings.officeStartTime.split(':').map(Number);
       const graceMinutes = settings.lateGracePeriod || 0;
       
-      const deadline = new Date();
-      // IST deadline for today
-      deadline.setHours(startHour, startMin + graceMinutes + 5, 0, 0);
+      const istNow = toIST();
+      const istDeadline = toIST();
+      istDeadline.setUTCHours(startHour, startMin + graceMinutes + 5, 0, 0);
 
-      const now = new Date();
-      if (now > deadline && isTodayWorkingDay(settings.workingDays)) {
+      if (istNow > istDeadline && isTodayWorkingDay(settings.workingDays)) {
         console.log('🔄 [CRON] Server started after today\'s deadline. Running catch-up Absent Alert check...');
         const deadlineStr = `${String(startHour).padStart(2, '0')}:${String(startMin + graceMinutes + 5).padStart(2, '0')}`;
         await runAbsentAlertCheck(settings, deadlineStr);

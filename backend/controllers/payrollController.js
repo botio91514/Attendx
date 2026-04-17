@@ -4,6 +4,7 @@ const Holiday = require('../models/Holiday');
 const Payroll = require('../models/Payroll');
 const Leave = require('../models/Leave');
 const Settings = require('../models/Settings');
+const AuditLog = require('../models/AuditLog');
 const { getMonthRange } = require('../utils/attendanceHelpers');
 const { sendEmail } = require('../utils/emailService');
 const { payslipTemplate } = require('../utils/emailTemplates');
@@ -71,9 +72,22 @@ const getPayrollSummary = async (req, res, next) => {
     const { startStr, endStr } = getMonthRange(y, m);
     const startDate = new Date(startStr);
     const endDate = new Date(endStr);
+
+    // 🛡️ FINANCIAL AUDIT FIX: Include everyone active during the month 
+    // (mid-month joiners AND resigners)
+    const employees = await User.find({ 
+      role: 'employee',
+      $and: [
+        { joiningDate: { $lte: endDate } },
+        { 
+          $or: [
+            { isActive: true }, 
+            { leavingDate: { $gte: startDate } }
+          ] 
+        }
+      ]
+    }).select('name email employeeId department designation baseSalary joiningDate leavingDate');
     
-    const employees = await User.find({ role: 'employee', isActive: true })
-      .select('name email employeeId department designation baseSalary joiningDate');
     const employeeIds = employees.map(e => e._id);
 
     const holidays = await Holiday.find({ date: { $gte: startDate, $lte: endDate } });
@@ -110,9 +124,11 @@ const getPayrollSummary = async (req, res, next) => {
     const totalWorkingDaysInMonth = countWorkingDays(startDate, endDate);
 
     const payrollData = employees.map((emp) => {
-      // PRO LOGIC: Handle Mid-month joiners
-      const effectiveStartDate = (emp.joiningDate && emp.joiningDate > startDate) ? emp.joiningDate : startDate;
-      const empWorkingDays = countWorkingDays(effectiveStartDate, endDate);
+      // PRO LOGIC: Handle Mid-month joiners AND resigners
+      const effectiveStartDate = (emp.joiningDate && new Date(emp.joiningDate) > startDate) ? new Date(emp.joiningDate) : startDate;
+      const effectiveEndDate = (emp.leavingDate && new Date(emp.leavingDate) < endDate) ? new Date(emp.leavingDate) : endDate;
+      
+      const empWorkingDays = countWorkingDays(effectiveStartDate, effectiveEndDate);
 
       const attendance = allAttendance.filter(a => a.userId.toString() === emp._id.toString());
       let p = 0, l = 0, h = 0;
@@ -123,22 +139,44 @@ const getPayrollSummary = async (req, res, next) => {
         else if (record.status === 'half-day') h++;
       });
 
-      // Calculate paid leave days
-      let leaveDays = 0;
-      const empLeaves = leaves.filter(lv => lv.userId.toString() === emp._id.toString());
+      // 🛡️ FINANCIAL AUDIT FIX: Prevent duplicate leave pay for overlapping requests
+      // We count only unique working days covered by all approved leaves
+      const uniquePaidLeaveDates = new Set();
+      // Only count PAID leave types: sick, casual, religious
+      const empLeaves = leaves.filter(lv => 
+        lv.userId.toString() === emp._id.toString() && 
+        lv.leaveType !== 'unpaid'
+      );
+      
       empLeaves.forEach(lv => {
-        const lvStart = lv.startDate < startDate ? startDate : lv.startDate;
-        const lvEnd = lv.endDate > endDate ? endDate : lv.endDate;
-        leaveDays += countWorkingDays(lvStart, lvEnd);
+        let currLv = new Date(lv.startDate < startDate ? startDate : lv.startDate);
+        const limitLv = new Date(lv.endDate > endDate ? endDate : lv.endDate);
+        
+        while (currLv <= limitLv) {
+          const ds = currLv.toISOString().split('T')[0];
+          const day = currLv.getUTCDay();
+          // Only add if it's a configured working day and not a public holiday
+          if (workingDaysConfig.includes(day) && !holidayDates.includes(ds)) {
+            uniquePaidLeaveDates.add(ds);
+          }
+          currLv.setUTCDate(currLv.getUTCDate() + 1);
+        }
       });
 
+      const leaveDaysCount = uniquePaidLeaveDates.size;
+
+      // 🛡️ FINANCIAL AUDIT FIX: High precision daily rate (no rounding yet)
       const dailyRate = totalWorkingDaysInMonth > 0 ? emp.baseSalary / totalWorkingDaysInMonth : 0;
       
-      // Payable days = Present + Half-day*0.5 + Approved Leaves
+      // Payable days = Present + Half-day*0.5 + Unique Approved Leaves
       const attendancePayable = p + (h * 0.5);
-      const payableDays = attendancePayable + leaveDays;
+      const payableDays = attendancePayable + leaveDaysCount;
       
-      const grossSalary = payableDays * dailyRate;
+      // Calculate float gross salary
+      const grossSalary = payableDays * dailyRate; 
+      const bonus = 0;
+      const deductions = 0;
+      const netSalary = (grossSalary + bonus) - deductions;
 
       return {
         _id: emp._id, // temp ID for preview
@@ -153,19 +191,19 @@ const getPayrollSummary = async (req, res, next) => {
         stats: {
           present: p,
           halfDay: h,
-          absent: Math.max(0, empWorkingDays - (p + h) - leaveDays),
+          absent: Math.max(0, empWorkingDays - (p + h) - leaveDaysCount),
           late: l,
-          leave: leaveDays
+          leave: leaveDaysCount
         },
         calculations: {
           totalWorkingDays: totalWorkingDaysInMonth,
           expectedWorkingDays: empWorkingDays, 
-          payableDays: Math.min(empWorkingDays, payableDays),
-          dailyRate: Math.round(dailyRate),
-          grossSalary: Math.round(grossSalary),
-          bonus: 0,
-          deductions: 0,
-          netSalary: Math.round(grossSalary)
+          payableDays: parseFloat(Math.min(empWorkingDays, payableDays).toFixed(2)),
+          dailyRate: dailyRate, // Keep float for precision
+          grossSalary: grossSalary, // Keep float
+          bonus: bonus,
+          deductions: deductions,
+          netSalary: Math.round(netSalary) // Round only the final payout!
         }
       };
     });
@@ -185,14 +223,18 @@ const getPayrollSummary = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Lock and Save payroll records for the month
- * @route   POST /api/payroll/admin/process
- * @access  Private/Admin
- */
 const processPayroll = async (req, res, next) => {
   try {
-    const { month, year, items } = req.body; // items is array of calculated objects
+    const { month, year, items } = req.body; 
+
+    // 🛡️ FINANCIAL AUDIT FIX: Prevent silent overwrite of finalized payroll
+    const existing = await Payroll.findOne({ month, year });
+    if (existing) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This month is already finalized. Please unlock it manually if you need to modify records.' 
+      });
+    }
 
     if (!items || !Array.isArray(items)) {
       return res.status(400).json({ success: false, message: 'Invalid payroll data' });
@@ -366,18 +408,135 @@ const bulkPay = async (req, res, next) => {
 };
 
 /**
- * @desc    Get personal payroll history (Employee)
- * @route   GET /api/payroll/my-history
- * @access  Private/Employee
+ * @desc    Get personal payroll history or specific month preview
+ * @route   GET /api/payroll/my
+ * @access  Private
  */
 const getMyPayroll = async (req, res, next) => {
   try {
-    const history = await Payroll.find({ userId: req.user._id, status: { $ne: 'draft' } })
-      .sort({ year: -1, month: -1 });
+    const { month, year } = req.query;
+    
+    // If no month/year provided, return history of finalized/paid records
+    if (!month || !year) {
+      const history = await Payroll.find({ 
+        userId: req.user._id, 
+        status: { $in: ['finalized', 'paid'] } 
+      }).sort({ year: -1, month: -1 });
+
+      return res.status(200).json({
+        success: true,
+        data: history
+      });
+    }
+
+    const m = parseInt(month);
+    const y = parseInt(year);
+
+    // 1. Check if finalized record exists
+    const record = await Payroll.findOne({ 
+      userId: req.user._id, 
+      month: m, 
+      year: y 
+    });
+
+    if (record) {
+      return res.status(200).json({
+        success: true,
+        isFinalized: true,
+        data: record
+      });
+    }
+
+    // 2. Generate dynamic preview (Draft)
+    const settings = await Settings.getSettings();
+    const workingDaysConfig = settings.workingDays || [1, 2, 3, 4, 5];
+    const { startStr, endStr } = getMonthRange(y, m);
+    const startDate = new Date(startStr);
+    const endDate = new Date(endStr);
+
+    const holidays = await Holiday.find({ date: { $gte: startDate, $lte: endDate } });
+    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
+
+    const leaves = await Leave.find({
+      userId: req.user._id,
+      status: 'approved',
+      startDate: { $lte: endDate },
+      endDate: { $gte: startDate }
+    });
+
+    const attendanceRecords = await Attendance.find({
+      userId: req.user._id,
+      date: { $gte: startStr, $lte: endStr }
+    });
+
+    // Reuse working day counter
+    const countWorkingDays = (from, to) => {
+      let count = 0;
+      let curr = new Date(from);
+      while (curr <= to) {
+        const day = curr.getDay();
+        if (workingDaysConfig.includes(day) && !holidayDates.includes(curr.toISOString().split('T')[0])) {
+          count++;
+        }
+        curr.setDate(curr.getDate() + 1);
+      }
+      return count;
+    };
+
+    const totalWorkingDaysInMonth = countWorkingDays(startDate, endDate);
+    const effectiveStartDate = (req.user.joiningDate && new Date(req.user.joiningDate) > startDate) ? new Date(req.user.joiningDate) : startDate;
+    const effectiveEndDate = (req.user.leavingDate && new Date(req.user.leavingDate) < endDate) ? new Date(req.user.leavingDate) : endDate;
+    const empWorkingDays = countWorkingDays(effectiveStartDate, effectiveEndDate);
+
+    let p = 0, l = 0, h = 0;
+    attendanceRecords.forEach(record => {
+      if (record.status === 'present') p++;
+      else if (record.status === 'late') { p++; l++; }
+      else if (record.status === 'half-day') h++;
+    });
+
+    const uniquePaidLeaveDates = new Set();
+    leaves.forEach(lv => {
+      let currLv = new Date(lv.startDate < startDate ? startDate : lv.startDate);
+      const limitLv = new Date(lv.endDate > endDate ? endDate : lv.endDate);
+      while (currLv <= limitLv) {
+        const ds = currLv.toISOString().split('T')[0];
+        const day = currLv.getUTCDay();
+        if (workingDaysConfig.includes(day) && !holidayDates.includes(ds)) uniquePaidLeaveDates.add(ds);
+        currLv.setUTCDate(currLv.getUTCDate() + 1);
+      }
+    });
+
+    const leaveDaysCount = uniquePaidLeaveDates.size;
+    const dailyRate = totalWorkingDaysInMonth > 0 ? req.user.baseSalary / totalWorkingDaysInMonth : 0;
+    const attendancePayable = p + (h * 0.5);
+    const payableDays = attendancePayable + leaveDaysCount;
+    const grossSalary = payableDays * dailyRate;
+
+    const draftData = {
+      userId: req.user._id,
+      month: m,
+      year: y,
+      baseSalary: req.user.baseSalary,
+      status: 'draft',
+      presentDays: p,
+      halfDays: h,
+      lateDays: l,
+      absentDays: Math.max(0, empWorkingDays - (p + h) - leaveDaysCount),
+      leaveDays: leaveDaysCount,
+      payableDays: parseFloat(Math.min(empWorkingDays, payableDays).toFixed(2)),
+      dailyRate: dailyRate,
+      grossSalary: grossSalary,
+      bonus: 0,
+      deductions: 0,
+      netSalary: Math.round(grossSalary),
+      workingDays: totalWorkingDaysInMonth
+    };
 
     res.status(200).json({
       success: true,
-      data: history
+      isFinalized: false,
+      data: draftData
     });
   } catch (error) {
     next(error);
@@ -406,6 +565,13 @@ const unlockPayroll = async (req, res, next) => {
     }
 
     await Payroll.deleteMany({ month, year });
+
+    // 🛡️ FINANCIAL AUDIT FIX: Maintain accountability for sensitive unlock actions
+    await AuditLog.create({
+      action: 'PAYROLL_UNLOCK',
+      performedBy: req.user._id,
+      details: `Unlocked payroll records for ${month}/${year}. Draft system now active.`
+    });
 
     res.status(200).json({
       success: true,

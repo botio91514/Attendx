@@ -104,25 +104,30 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
   // Get dynamic settings or use defaults
   const startTimeStr = settings?.officeStartTime || '09:15';
   const graceMinutes = settings?.lateGracePeriod || 0;
-  const halfDayHours = settings?.halfDayThreshold || 4;
+  const halfDayHours = settings?.halfDayThreshold || 5;
 
   const [startHour, startMinute] = startTimeStr.split(':').map(Number);
   
-  // Check if late
-  const checkInTime = new Date(this.checkIn);
-  const threshold = new Date(this.checkIn);
-  threshold.setHours(startHour, startMinute + graceMinutes, 0, 0);
-
-  if (checkInTime > threshold) {
-    return 'late';
-  }
-
-  // Check for half-day
+  // Check for half-day (Highest priority after Absence)
+  // 🛡️ FINANCIAL SAFETY: Add 15m grace buffer to prevent "50% pay loss" cliff
   if (this.checkOut) {
     const workingHours = this.calculateWorkingHours();
-    if (workingHours < halfDayHours * 60) {
+    const halfDayMinutes = halfDayHours * 60;
+    const graceBuffer = 15; // 15 minutes grace
+
+    if (workingHours < (halfDayMinutes - graceBuffer)) {
       return 'half-day';
     }
+  }
+
+  // Check if late (Using centralized IST utility)
+  const { getISTMinutesFromMidnight } = require('../utils/timeUtils');
+  
+  const currentTotalMin = getISTMinutesFromMidnight(this.checkIn);
+  const thresholdTotalMin = startHour * 60 + startMinute + graceMinutes;
+
+  if (currentTotalMin > thresholdTotalMin) {
+    return 'late';
   }
 
   return 'present';

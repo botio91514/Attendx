@@ -15,6 +15,13 @@ const {
 router.use(protect);
 
 /**
+ * @route   GET /api/payroll/my
+ * @desc    Get personal payroll (history or month-specific)
+ * @access  Private (Employee/Admin)
+ */
+router.get('/my', getMyPayroll);
+
+/**
  * @route   GET /api/payroll/my-history
  * @desc    Get personal payroll history
  * @access  Private (Employee/Admin)

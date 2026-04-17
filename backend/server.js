@@ -19,28 +19,19 @@ connectDB();
 
 const app = express();
 
-// --- 1. SMART LOGGING (Ultra-Quiet) ---
+// --- 1. SMART LOGGING (Ultra-Minimal) ---
 app.use((req, res, next) => {
   const start = Date.now();
   
-  // Routes to never log (polling and noise)
-  const quietPaths = [
-    '/api/health', 
-    '/api/notifications', 
-    '/api/attendance/break/status', 
-    '/api/auth/refresh-token'
-  ];
-
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const isQuietPath = quietPaths.some(p => req.originalUrl.startsWith(p));
-    
+    const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
+    const isError = res.statusCode >= 400;
+
     // 🔥 LOG CRITERIA:
-    // 1. Must NOT be an OPTIONS (preflight) request
-    // 2. Must NOT be in the quiet list
-    // 3. Must NOT be a 304 (Not Modified) - this removes the massive spam
-    // 4. We only log GET/POST if they actually changed or retrieved something (Status != 304)
-    if (req.method !== 'OPTIONS' && !isQuietPath && res.statusCode !== 304) {
+    // Only log if it's a Mutation (Action) OR an Error
+    // This keeps logs minimal and focused on important events.
+    if (isMutation || isError) {
       console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
     }
   });
