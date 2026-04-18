@@ -1,44 +1,110 @@
 /**
- * Calculate total working days and per-year breakdown between two dates
- * @param {Date|String} startDate
- * @param {Date|String} endDate
- * @param {Array<Number>} workingDays - Days [0-6]
- * @param {Array<String>} holidays - ISO dates YYYY-MM-DD
- * @returns {Object} { total: Number, breakdown: { year: [dates] } }
+ * Calculate available balance based on pro-rata monthly accrual
+ * Formula: monthsActiveInYear * quotaPerMonth
+ * monthsActiveInYear = currentMonth - max(1, joiningMonth) + 1 (clipped to current year)
  */
-const getLeaveBreakdown = (startDate, endDate, workingDays = [1, 2, 3, 4, 5], holidays = []) => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  
-  if (start > end) return { total: 0, breakdown: {} };
-  
-  const holidayStrings = (holidays || []).map(h => {
-    const d = new Date(h);
-    return d.toISOString().split('T')[0];
+const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl: 0 }, joiningDate) => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  let monthsWorked = currentMonth;
+  if (joiningDate) {
+    const join = new Date(joiningDate);
+    if (join.getFullYear() === currentYear) {
+      // If joined this year, count only from joining month to now
+      monthsWorked = Math.max(1, currentMonth - join.getMonth());
+    }
+  }
+
+  const clAccrued = Math.min(12, monthsWorked * 1);
+  const slAccrued = Math.min(6, monthsWorked * 0.5);
+  const rlQuota = 2;
+
+  return {
+    cl: Math.max(0, clAccrued - (balanceDoc.casual?.used || 0) - (pendingCounts.cl || 0)),
+    sl: Math.max(0, slAccrued - (balanceDoc.sick?.used || 0) - (pendingCounts.sl || 0)),
+    rl: Math.max(0, rlQuota - (balanceDoc.religious?.used || 0) - (pendingCounts.rl || 0)),
+    lwp: 999 
+  };
+};
+
+/**
+ * Distribute requested leave dates strictly against monthly and yearly limits
+ * CL: Max 1/month (Strict, full LWP if exceeded per day)
+ * SL: Max 0.5/month (Partial allowed: 0.5 SL + rest LWP)
+ * RL: Max 2/year (Strict, full LWP if exceeded per day)
+ */
+const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 0, isHalfDay = false) => {
+  const breakdown = { cl: 0, sl: 0, rl: 0, lwp: 0, dailyBreakdown: [] };
+  const dayIncrement = isHalfDay ? 0.5 : 1;
+  const MONTHLY_LIMITS = { cl: 1, sl: 0.5 };
+  const YEARLY_LIMIT = 2; // for RL
+
+  // Sort dates chronologically
+  const sortedDates = [...allDates].sort();
+
+  sortedDates.forEach(date => {
+    const monthKey = date.slice(0, 7); // "YYYY-MM"
+    if (!monthlyUsed[monthKey]) monthlyUsed[monthKey] = { cl: 0, sl: 0 };
+    
+    let remainingToDistribute = dayIncrement;
+
+    if (selectedType === 'sl') {
+      // SL Partial Logic: Use whatever is left of the 0.5 monthly quota, then rest is LWP
+      const availableSL = Math.max(0, MONTHLY_LIMITS.sl - (monthlyUsed[monthKey].sl || 0));
+      const slToTake = Math.min(availableSL, remainingToDistribute);
+      
+      if (slToTake > 0) {
+        breakdown.sl += slToTake;
+        monthlyUsed[monthKey].sl += slToTake;
+        remainingToDistribute -= slToTake;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'sl', days: slToTake });
+      }
+      
+      if (remainingToDistribute > 0) {
+        breakdown.lwp += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
+        remainingToDistribute = 0;
+      }
+    } else if (selectedType === 'cl') {
+      // CL Strict Logic: If the day's increment exceeds the 1.0 limit, the WHOLE day's increment is LWP
+      if ((monthlyUsed[monthKey].cl || 0) + remainingToDistribute <= MONTHLY_LIMITS.cl) {
+        breakdown.cl += remainingToDistribute;
+        monthlyUsed[monthKey].cl += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'cl', days: remainingToDistribute });
+      } else {
+        breakdown.lwp += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
+      }
+    } else if (selectedType === 'rl') {
+      // RL Strict Logic: 2 per year
+      if ((yearlyUsed || 0) + remainingToDistribute <= YEARLY_LIMIT) {
+        breakdown.rl += remainingToDistribute;
+        yearlyUsed += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'rl', days: remainingToDistribute });
+      } else {
+        breakdown.lwp += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
+      }
+    } else {
+      // Unpaid or other
+      breakdown.lwp += remainingToDistribute;
+      breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
+    }
   });
 
-  let total = 0;
-  let breakdown = {};
-  let current = new Date(start);
-  
-  while (current <= end) {
-    const dayOfWeek = current.getDay(); 
-    const dateStr = current.toISOString().split('T')[0];
-    const year = current.getFullYear();
+  return breakdown;
+};
 
-    const isWorkingDay = workingDays.includes(dayOfWeek);
-    const isHoliday = holidayStrings.includes(dateStr);
-
-    if (isWorkingDay && !isHoliday) {
-      total++;
-      if (!breakdown[year]) breakdown[year] = [];
-      breakdown[year].push(dateStr);
-    }
-    
-    current.setDate(current.getDate() + 1);
+const getDatesBetween = (startDate, endDate) => {
+  const dates = [];
+  let curr = new Date(startDate);
+  while (curr <= endDate) {
+    dates.push(curr.toISOString().split('T')[0]);
+    curr.setDate(curr.getDate() + 1);
   }
-  
-  return { total, breakdown };
+  return dates;
 };
 
 const getCurrentYear = () => new Date().getFullYear();
@@ -52,7 +118,9 @@ const dateRangesOverlap = (start1, end1, start2, end2) => {
 };
 
 module.exports = {
-  getLeaveBreakdown,
   getCurrentYear,
   dateRangesOverlap,
+  calculateAccrualBalance,
+  distributeLeave,
+  getDatesBetween
 };

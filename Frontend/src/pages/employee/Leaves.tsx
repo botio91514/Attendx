@@ -49,10 +49,10 @@ const LeavesPage: React.FC = () => {
       if (balanceRes.success && balanceRes.data && balanceRes.data.balance) {
         const b = balanceRes.data.balance;
         const balanceArray = [
-          { type: 'Casual', id: 'casual', total: b.casual.total, remaining: b.casual.remaining, used: b.casual.used, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
-          { type: 'Sick', id: 'sick', total: b.sick.total, remaining: b.sick.remaining, used: b.sick.used, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
-          { type: 'Religious', id: 'religious', total: b.religious.total, remaining: b.religious.remaining, used: b.religious.used, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
-          { type: 'LWP', id: 'unpaid', total: 'Unlimited', remaining: '∞', used: b.unpaid.used, icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
+          { type: 'Casual', id: 'casual', total: b.casual?.total ?? 12, accrued: b.casual?.accrued ?? 0, remaining: b.casual?.available ?? 0, used: b.casual?.used ?? 0, monthlyLimit: b.casual?.monthlyLimit ?? 1, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
+          { type: 'Sick', id: 'sick', total: b.sick?.total ?? 6, accrued: b.sick?.accrued ?? 0, remaining: b.sick?.available ?? 0, used: b.sick?.used ?? 0, monthlyLimit: b.sick?.monthlyLimit ?? 0.5, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
+          { type: 'Religious', id: 'religious', total: b.religious?.total ?? 2, accrued: b.religious?.accrued ?? 0, remaining: b.religious?.available ?? 0, used: b.religious?.used ?? 0, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
+          { type: 'LWP', id: 'unpaid', total: 'Unlimited', accrued: '∞', remaining: '∞', used: b.unpaid?.used ?? 0, icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
         ];
         setBalances(balanceArray);
       }
@@ -144,34 +144,52 @@ const LeavesPage: React.FC = () => {
 
       {/* Modern Balance Row */}
       <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {balances.map((lb, i) => (
-           <div key={i} className="glass-card p-4 relative overflow-hidden group border-none shadow-sm hover:shadow-md transition-all">
+        {balances.map((lb: any, i) => (
+           <div key={i} className="glass-card p-5 relative overflow-hidden group border-none shadow-sm hover:shadow-md transition-all">
               <div className={`absolute top-0 right-0 w-24 h-24 blur-[40px] rounded-full opacity-10 group-hover:opacity-20 transition-opacity translate-x-1/2 -translate-y-1/2`} style={{ backgroundColor: lb.color }} />
               
-              <div className="flex justify-between items-start mb-4 relative z-10">
-                 <div className={`p-2.5 rounded-xl ${lb.bg} border border-white/5`}>
-                    <lb.icon className="w-5 h-5" style={{ color: lb.color }} />
+              <div className="flex justify-between items-start mb-6">
+                 <div className={`w-12 h-12 rounded-2xl ${lb.bg} flex items-center justify-center`}>
+                    <lb.icon className="w-6 h-6" style={{ color: lb.color }} />
                  </div>
-                 <div className="flex flex-col text-right">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-tighter">Status</span>
-                    <span className="text-[11px] font-bold text-foreground uppercase">{lb.id === 'unpaid' ? 'Active' : `${lb.remaining} Left`}</span>
+                 <div className="text-right">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Status</span>
+                    <span className={`text-[11px] font-bold ${lb.remaining === 0 && lb.id !== 'unpaid' ? 'text-destructive' : 'text-success'} uppercase`}>
+                       {lb.id === 'unpaid' ? 'Active' : `${lb.remaining} Left`}
+                    </span>
                  </div>
               </div>
 
-              <div className="relative z-10">
-                 <h4 className="text-sm font-bold text-foreground mb-4">{lb.type}</h4>
-                 <div className="flex items-end gap-1 mb-2">
-                    <span className="text-3xl font-display font-bold text-foreground leading-none">{lb.remaining}</span>
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase pb-1">/ {lb.total} Days</span>
+              <h4 className="text-sm font-bold text-foreground mb-4">{lb.type}</h4>
+              
+              <div className="space-y-4">
+                 <div className="flex justify-between items-end">
+                    <div className="flex flex-col">
+                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Accrued</span>
+                       <span className="text-sm font-bold">
+                          {lb.id === 'unpaid' ? '∞' : `${lb.accrued}d`}
+                       </span>
+                    </div>
+                    <div className="text-right flex flex-col">
+                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Used</span>
+                       <span className="text-sm font-bold text-destructive">{lb.used}d</span>
+                    </div>
+                 </div>
+
+                 <div className="relative h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                    <motion.div 
+                       initial={{ width: 0 }}
+                       animate={{ width: lb.id === 'unpaid' ? '100%' : `${(lb.used / (lb.accrued || 1)) * 100}%` }}
+                       className="absolute h-full inset-0 rounded-full"
+                       style={{ backgroundColor: lb.id === 'unpaid' ? lb.color : (lb.used >= lb.accrued ? 'red' : lb.color) }}
+                    />
                  </div>
                  
-                 <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <motion.div 
-                       initial={{ width: 0 }} 
-                       animate={{ width: lb.id === 'unpaid' ? '100%' : `${(lb.used / lb.total) * 100}%` }} 
-                       className="h-full rounded-full" 
-                       style={{ backgroundColor: lb.color }} 
-                    />
+                 <div className="flex justify-between items-center text-[9px] font-bold text-muted-foreground uppercase">
+                    <span>Yearly Cap: {lb.total}</span>
+                    <span className="text-primary/70 italic">
+                       {lb.monthlyLimit ? `Limit: ${lb.monthlyLimit}d/mo` : 'Auto-Accrue'}
+                    </span>
                  </div>
               </div>
            </div>
@@ -235,8 +253,20 @@ const LeavesPage: React.FC = () => {
                                  <span className="opacity-70">{formatDate(leave.endDate)}</span>
                               </div>
                            </td>
-                           <td className="px-5 py-5 text-xs text-foreground font-bold">{leave.totalDays}d</td>
-                           <td className="px-5 py-5"><span className={`${getStatusColor(leave.status)} text-[10px] font-bold uppercase rounded-full px-2.5 py-1`}>{leave.status}</span></td>
+                            <td className="px-5 py-5">
+                               <div className="flex flex-col gap-1">
+                                  <span className="text-xs text-foreground font-bold">{leave.totalDays}d</span>
+                                  {leave.status === 'approved' && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {leave.clDays > 0 && <span className="text-[8px] bg-blue-500/10 text-blue-500 px-1 rounded uppercase font-bold">CL:{leave.clDays}</span>}
+                                      {leave.slDays > 0 && <span className="text-[8px] bg-rose-500/10 text-rose-500 px-1 rounded uppercase font-bold">SL:{leave.slDays}</span>}
+                                      {leave.rlDays > 0 && <span className="text-[8px] bg-amber-500/10 text-amber-500 px-1 rounded uppercase font-bold">RL:{leave.rlDays}</span>}
+                                      {leave.lwpDays > 0 && <span className="text-[8px] bg-destructive/10 text-destructive px-1 rounded uppercase font-bold">LWP:{leave.lwpDays}</span>}
+                                    </div>
+                                  )}
+                               </div>
+                            </td>
+                            <td className="px-5 py-5"><span className={`${getStatusColor(leave.status)} text-[10px] font-bold uppercase rounded-full px-2.5 py-1`}>{leave.status}</span></td>
                            <td className="px-5 py-5 text-right">
                              {leave.status === 'pending' ? (
                                <button onClick={() => handleCancel(leave._id)} className="p-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors" title="Cancel Request">
@@ -258,16 +288,18 @@ const LeavesPage: React.FC = () => {
             <div className="p-6 rounded-3xl bg-primary shadow-xl shadow-primary/20 text-primary-foreground relative overflow-hidden group">
                <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500" />
                <Calendar className="w-8 h-8 mb-4 opacity-80" />
-               <h4 className="text-lg font-bold mb-2 font-display">Time-off Policy</h4>
-               <p className="text-xs opacity-70 leading-relaxed mb-6">Your leave balance is reset every January 1st. Unused leaves do not carry forward to the next year.</p>
+               <h4 className="text-lg font-bold mb-2 font-display">Strict Leave Policy</h4>
+               <p className="text-xs opacity-70 leading-relaxed mb-6">
+                 Limits: **1.0 Casual Leave** & **0.5 Sick Leave** per month. Excess days are automatically converted to LWP.
+               </p>
                <div className="space-y-3">
                   <div className="flex justify-between items-center text-[10px] font-bold uppercase border-t border-white/10 pt-3">
-                     <span className="opacity-60">Working Days</span>
-                     <span>Mon - Sat</span>
+                     <span className="opacity-60">Sync Logic</span>
+                     <span>Auto-Conversion to LWP</span>
                   </div>
                   <div className="flex justify-between items-center text-[10px] font-bold uppercase">
                      <span className="opacity-60">LWP</span>
-                     <span>No Limit</span>
+                     <span>Unlimited</span>
                   </div>
                </div>
             </div>
@@ -336,6 +368,63 @@ const LeavesPage: React.FC = () => {
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1 leading-none">Detailed Reason</label>
                   <textarea value={formData.reason} onChange={e => setFormData({ ...formData, reason: e.target.value })} className="input-floating rounded-3xl min-h-[140px] bg-secondary/30 resize-none py-4 border-transparent" placeholder="Tell us why you need this leave..." required />
                 </div>
+
+                {/* Real-time Breakdown Preview */}
+                {formData.startDate && formData.endDate && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="p-4 rounded-3xl bg-primary/5 border border-primary/20 space-y-3">
+                    <h5 className="text-[10px] font-bold uppercase tracking-widest text-primary">Allocation Preview</h5>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(() => {
+                        const start = new Date(formData.startDate);
+                        const end = new Date(formData.endDate);
+                        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return null;
+                        
+                        // Simple working day count (simplified frontend version)
+                        let count = 0;
+                        let curr = new Date(start);
+                        while(curr <= end) {
+                          if (curr.getDay() !== 0) count++; // Not Sunday
+                          curr.setDate(curr.getDate() + 1);
+                        }
+
+                        // Project distribution based on Strict Policy
+                        const balanceObj = balances.find(b => b.id === (formData.type === 'unpaid' ? 'unpaid' : formData.type));
+                        const monthlyLimit = balanceObj?.monthlyLimit || (formData.type === 'casual' ? 1 : formData.type === 'sick' ? 0.5 : 99);
+                        const yearlyRemaining = Number(balanceObj?.remaining || 0);
+
+                        let paid = 0;
+                        let lwp = 0;
+                        
+                        if (formData.type === 'unpaid') {
+                          lwp = count;
+                        } else {
+                          // Max paid is the minimum of (requested days, monthly limit, and yearly remaining)
+                          // Note: This is an estimate as we don't know this month's prior usage here
+                          const limitToUse = Math.min(monthlyLimit, yearlyRemaining);
+                          paid = Math.min(count, limitToUse);
+                          lwp = Math.max(0, count - paid);
+                        }
+
+                        return (
+                          <>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-muted-foreground">Requested:</span>
+                              <span className="font-bold text-foreground">{count} Days</span>
+                            </div>
+                            <div className="col-span-2 border-t border-primary/10 pt-2 space-y-1">
+                              {paid > 0 && <div className="flex justify-between text-[11px]"><span className="text-success">✔ {formData.type.charAt(0).toUpperCase() + formData.type.slice(1)} (Paid)</span><span className="font-mono">{paid}d</span></div>}
+                              {lwp > 0 && <div className="flex justify-between text-[11px]"><span className="text-destructive font-bold">❌ LWP (Unpaid)</span><span className="font-mono font-bold">{lwp}d</span></div>}
+                              
+                              {paid === 0 && lwp === count && formData.type !== 'unpaid' && (
+                                <p className="text-[9px] text-amber-500 font-bold mt-1 uppercase italic">⚠️ Quota exhausted! Entire request will be LWP.</p>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </motion.div>
+                )}
 
                 <div className="pt-6">
                    <button type="submit" disabled={submitLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground w-full py-5 rounded-[24px] font-bold text-lg shadow-2xl shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 flex justify-center">

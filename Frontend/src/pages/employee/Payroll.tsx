@@ -12,13 +12,16 @@ import {
   ChevronRight,
   Download,
   Clock,
-  LayoutDashboard
+  LayoutDashboard,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { ExportButton } from '@/components/ExportButton';
+import { formatCurrency } from '@/lib/utils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -137,7 +140,7 @@ const EmployeePayroll: React.FC = () => {
                  </div>
                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Take-home Salary</p>
                  <h4 className="text-4xl font-display font-bold text-foreground flex items-center gap-1">
-                    <IndianRupee className="w-8 h-8" /> {data.netSalary.toLocaleString()}
+                    {formatCurrency(data.netSalary)}
                  </h4>
                  {data.paidAt && (
                    <p className="mt-4 text-xs font-medium text-success flex items-center gap-1.5 bg-success/5 px-4 py-2 rounded-full border border-success/10">
@@ -146,75 +149,143 @@ const EmployeePayroll: React.FC = () => {
                  )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2">
-                 <div className="p-6 border-r border-glass-border">
-                    <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
-                       <Clock className="w-3.5 h-3.5" /> Attendance Summary
-                    </h5>
-                    <div className="space-y-3">
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Present Days</span>
-                          <span className="font-bold text-success bg-success/10 px-2 py-0.5 rounded">{data.presentDays} Days</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Late Check-ins</span>
-                          <span className="font-bold text-warning bg-warning/10 px-2 py-0.5 rounded">{data.lateDays} Times</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Half-days</span>
-                          <span className="font-bold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded">{data.halfDays} Days</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Approved Leaves</span>
-                          <span className="font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">{data.leaveDays || 0} Days</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Absences</span>
-                          <span className="font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded">{data.absentDays} Days</span>
+               <div className="grid grid-cols-1 md:grid-cols-2">
+                  <div className="p-6 border-r border-glass-border space-y-6">
+                    <div>
+                       <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-success" /> ✔ Paid Days
+                       </h5>
+                       <div className="space-y-3">
+                          <div className="flex justify-between items-center text-sm">
+                             <span className="text-muted-foreground">Present Days</span>
+                             <span className="font-bold text-success bg-success/10 px-2 py-0.5 rounded">{data.presentDays}</span>
+                          </div>
+                          {data.clDays > 0 && <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Casual Leave</span><span className="font-bold text-success bg-success/10 px-2 py-0.5 rounded">{data.clDays}</span></div>}
+                          {data.slDays > 0 && <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Sick Leave</span><span className="font-bold text-success bg-success/10 px-2 py-0.5 rounded">{data.slDays}</span></div>}
+                          {data.rlDays > 0 && <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Religious Leave</span><span className="font-bold text-success bg-success/10 px-2 py-0.5 rounded">{data.rlDays}</span></div>}
+                          <div className="flex justify-between items-center text-sm border-t border-success/10 pt-2 font-bold text-success">
+                             <span>Total Paid Days</span>
+                             <span>{data.payableDays}</span>
+                          </div>
                        </div>
                     </div>
-                 </div>
-                 <div className="p-6">
-                    <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
-                       <History className="w-3.5 h-3.5" /> Financial Breakdown
-                    </h5>
-                    <div className="space-y-3">
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Base Salary</span>
-                          <span className="font-bold">₹{data.baseSalary.toLocaleString()}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Daily Rate</span>
-                          <span className="font-bold">₹{data.dailyRate.toFixed(2)}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">Payable Days</span>
-                          <span className="font-bold text-primary">{data.payableDays}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm pt-2 border-t border-glass-border">
-                          <span className="text-muted-foreground">Gross Salary</span>
-                          <span className="font-bold text-foreground">₹{Math.round(data.grossSalary).toLocaleString()}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm text-success">
-                          <span className="font-medium">Bonus / Additions</span>
-                          <span className="font-bold">+{data.bonus.toLocaleString()}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-sm text-destructive">
-                          <span className="font-medium">Deductions</span>
-                          <span className="font-bold">-{data.deductions.toLocaleString()}</span>
+
+                    <div>
+                       <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <XCircle className="w-3.5 h-3.5 text-destructive" /> ❌ Unpaid Days
+                       </h5>
+                       <div className="space-y-3">
+                          <div className="flex justify-between items-center text-sm">
+                             <span className="text-muted-foreground">LWP (Unpaid)</span>
+                             <span className="font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded">{data.lwpDays || 0}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                             <span className="text-muted-foreground">Other Absences</span>
+                             <span className="font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded">{data.absentDays - (data.lwpDays || 0)}</span>
+                          </div>
                        </div>
                     </div>
-                 </div>
-              </div>
-              
-              {isFinalized && data.status !== 'draft' && (
+                  </div>
+
+                  <div className="p-6">
+                    <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                       <History className="w-3.5 h-3.5" /> Financial Split
+                    </h5>
+                    <div className="space-y-4">
+                       <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Monthly Base</span>
+                          <span className="font-bold">{formatCurrency(data.baseSalary)}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Total Working Days</span>
+                          <span className="font-bold">{data.workingDays}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm text-primary">
+                          <span className="font-bold text-xs uppercase tracking-tighter">Daily Pay Rate</span>
+                          <span className="font-bold">{formatCurrency(data.dailyRate)}</span>
+                       </div>
+                       
+                       <div className="pt-4 border-t border-glass-border space-y-3">
+                          <div className="flex justify-between items-center text-sm">
+                             <span className="text-muted-foreground flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-success"></span> Paid Amount
+                             </span>
+                             <span className="font-bold text-success">{formatCurrency(data.payableDays * data.dailyRate)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                             <span className="text-muted-foreground flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-destructive"></span> LWP Deduction
+                             </span>
+                             <span className="font-bold text-destructive">-{formatCurrency((data.lwpDays || 0) * data.dailyRate)}</span>
+                          </div>
+                          {data.bonus > 0 && <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Bonus Credits</span><span className="font-bold text-primary">+{formatCurrency(data.bonus)}</span></div>}
+                          
+                          <div className="flex justify-between items-center text-base border-t border-primary/20 pt-4 mt-2 font-bold text-primary">
+                             <span className="uppercase tracking-widest text-[10px]">Final Net Salary</span>
+                             <span className="text-lg">{formatCurrency(data.netSalary)}</span>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+               </div>
+               
+               {/* 🧠 EXPLAIN MODE */}
+               <div className="p-8 bg-primary/5 border-t border-glass-border">
+                  <div className="flex items-center gap-2 mb-6 text-primary">
+                     <Info className="w-5 h-5" />
+                     <h4 className="text-sm font-bold uppercase tracking-widest">How was this salary calculated?</h4>
+                  </div>
+                  <div className="space-y-8 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[1px] before:bg-primary/20">
+                     <div className="relative pl-10">
+                        <div className="absolute left-0 top-1 w-[22px] h-[22px] rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary">1</div>
+                        <p className="text-xs font-bold text-foreground mb-1">Establish Daily Rate</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                           Your monthly base salary ({formatCurrency(data.baseSalary)}) is divided by the total working days available in {monthName} ({data.workingDays} days).
+                           <br />
+                           <span className="font-mono text-primary font-bold">{formatCurrency(data.baseSalary)} ÷ {data.workingDays} = {formatCurrency(data.dailyRate)}/day</span>
+                        </p>
+                     </div>
+
+                     <div className="relative pl-10">
+                        <div className="absolute left-0 top-1 w-[22px] h-[22px] rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary">2</div>
+                        <p className="text-xs font-bold text-foreground mb-1">Calculate Payable Salary</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                           Your salary is calculated by multiplying your total payable days (Present + Paid Leaves) by your daily rate.
+                           <br />
+                           <span className="font-mono text-primary font-bold">{data.payableDays} Days × {formatCurrency(data.dailyRate)} = {formatCurrency(data.payableDays * data.dailyRate)}</span>
+                        </p>
+                     </div>
+
+                      <div className="relative pl-10">
+                        <div className="absolute left-0 top-1 w-[22px] h-[22px] rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary">3</div>
+                        <p className="text-xs font-bold text-foreground mb-1">Deduction Details (LWP)</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                           Deductions are calculated based on Leave Without Pay (LWP) days. Approved paid leaves (CL/SL/RL) do NOT result in deductions.
+                           <br />
+                           <span className="font-mono text-destructive font-bold">{data.lwpDays || 0} LWP Days × {formatCurrency(data.dailyRate)} = -{formatCurrency((data.lwpDays || 0) * data.dailyRate)}</span>
+                        </p>
+                     </div>
+
+                     <div className="relative pl-10">
+                        <div className="absolute left-0 top-1 w-[22px] h-[22px] rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary">4</div>
+                        <p className="text-xs font-bold text-foreground mb-1">Final Net Salary</p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed font-bold">
+                           Net = (Paid Amount) + (Bonus) - (Deductions)
+                           <br />
+                           <span className="text-primary font-mono">{formatCurrency(data.payableDays * data.dailyRate)} + {formatCurrency(data.bonus)} - {formatCurrency((data.lwpDays || 0) * data.dailyRate)} = {formatCurrency(data.netSalary)}</span>
+                        </p>
+                     </div>
+                  </div>
+               </div>
+
+               {isFinalized && data.status !== 'draft' && (
                 <div className="p-6 bg-secondary/30 border-t border-glass-border flex justify-between items-center">
                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Download className="w-4 h-4" /> Official Payslip is ready
                    </div>
                    <ExportButton 
                      type="payslip" 
-                     employeeId={user?._id || ''}
+                     employeeId={user?.id || ''}
                      dateRange={{
                        from: `${selectedMonth.year}-${selectedMonth.month}-01`,
                        to: `${selectedMonth.year}-${selectedMonth.month}-${new Date(parseInt(selectedMonth.year), parseInt(selectedMonth.month), 0).getDate()}`
@@ -223,7 +294,7 @@ const EmployeePayroll: React.FC = () => {
                      className="bg-primary text-white hover:bg-primary/90 font-bold rounded-xl"
                    />
                 </div>
-              )}
+               )}
             </div>
 
             <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl flex gap-3">
@@ -255,7 +326,7 @@ const EmployeePayroll: React.FC = () => {
                              <p className="text-sm font-bold text-foreground">
                                 {new Date(h.year, h.month - 1).toLocaleString('default', { month: 'short' })} {h.year}
                              </p>
-                             <p className="text-[10px] text-muted-foreground">₹{h.netSalary.toLocaleString()}</p>
+                             <p className="text-[10px] text-muted-foreground">₹{h.netSalary?.toLocaleString()}</p>
                           </div>
                        </div>
                        <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-all" />

@@ -69,13 +69,18 @@ const checkIn = async (req, res, next) => {
     
     const computedStatus = currentTotalMin > thresholdTotalMin ? 'late' : 'present';
 
-    // Single atomic upsert — no .save() ever called.
-    // This completely eliminates the E11000 duplicate key race condition.
+    // 🛡️ SYNC RULE: Check if a full-day leave already exists in leaveMeta
+    let statusToSet = computedStatus;
+    if (existing && existing.leaveMeta) {
+      const totalLeave = (existing.leaveMeta.cl || 0) + (existing.leaveMeta.sl || 0) + (existing.leaveMeta.rl || 0) + (existing.leaveMeta.lwp || 0);
+      if (totalLeave >= 1.0) statusToSet = 'leave';
+    }
+
     const attendance = await Attendance.findOneAndUpdate(
       { userId, date: today },
       {
         $setOnInsert: { userId, date: today },
-        $set: { checkIn: now, status: computedStatus }
+        $set: { checkIn: now, status: statusToSet }
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -518,11 +523,9 @@ const getAttendanceHistory = async (req, res, next) => {
           if (current.getDay() !== 0) {
             const dateStr = current.toISOString().split('T')[0];
             const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
-            const hasRealAttendance = existingIndex !== -1 && finalAttendance[existingIndex].status !== 'absent';
             
             if (dateStr <= todayStr) {
-              if (!hasRealAttendance) {
-                const leaveData = {
+               const leaveData = {
                   userId,
                   date: dateStr,
                   status: 'leave',
@@ -531,13 +534,12 @@ const getAttendanceHistory = async (req, res, next) => {
                 };
 
                 if (existingIndex !== -1) {
-                  // Override the 'absent' status with 'leave'
+                  // Override any existing record (present/late/absent) with 'leave' status
                   finalAttendance[existingIndex] = leaveData;
                 } else {
                   // No record at all, inject a new one
                   finalAttendance.push(leaveData);
                 }
-              }
             }
           }
           current.setDate(current.getDate() + 1);
@@ -668,12 +670,12 @@ const getAllAttendance = async (req, res, next) => {
     endOfTarget.setHours(23, 59, 59, 999);
 
     const leaves = await Leave.find({
-      status: 'approved',
+      status: 'pending',
       userId: { $in: employeeIds },
       startDate: { $lte: endOfTarget },
       endDate: { $gte: startOfTarget }
     });
-
+    
     // 🏆 Step 4: Get Current Active Tasks for Live Monitoring
     const activeTasks = await Task.find({
       assignedTo: { $in: employeeIds },
@@ -682,44 +684,38 @@ const getAllAttendance = async (req, res, next) => {
 
     // 🏆 Step 5: Merge everything
     const combined = employees.map(emp => {
-      // Find current task (if any)
       const activeTask = activeTasks.find(t => t.assignedTo.toString() === emp._id.toString());
-      
-      // Find attendance record (if any)
       const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
+      const pendingLeave = leaves.find(l => l.userId.toString() === emp._id.toString());
       
-      // Find approved leave for this specific date (if any)
-      const leave = leaves.find(l => l.userId.toString() === emp._id.toString());
+      // Mirror Layer Logic: Source of truth is record.leaveMeta
+      const hasMeta = record && record.leaveMeta;
+      const totalLeave = hasMeta ? (record.leaveMeta.cl + record.leaveMeta.sl + record.leaveMeta.rl + record.leaveMeta.lwp) : 0;
 
-      // PRIORITY 1: Real activity (Presence/Late)
-      if (record && record.status !== 'absent') {
-        return {
-          ...record.toObject(),
-          userId: emp
-        };
-      }
-
-      // PRIORITY 2: Approved Leave (Overrides Absence)
-      if (leave) {
+      // 🛡️ SYNC RULE: Full leave implies status 'leave' regardless of activity
+      if (totalLeave >= 1.0) {
         return {
           userId: emp,
           date: targetDate,
           status: 'leave',
-          leaveType: leave.leaveType,
-          isVirtual: true,
-          breaks: []
+          leaveType: record.leaveMeta.cl > 0 ? 'casual' : (record.leaveMeta.sl > 0 ? 'sick' : 'religious'),
+          isVirtual: !record.checkIn,
+          ...record?.toObject()
         };
       }
 
-      // PRIORITY 3: Existing Absent Record
-      if (record) {
+      // If work activity exists
+      if (record && record.checkIn) {
         return {
           ...record.toObject(),
-          userId: emp
+          userId: emp,
+          activeTask,
+          hasLeaveComponent: totalLeave > 0,
+          pendingLeave: !!pendingLeave
         };
       }
 
-      // PRIORITY 4: De-facto Absent (No record at all)
+      // Default: Absent (with pending leave alert if exists)
       return {
         userId: emp,
         date: targetDate,

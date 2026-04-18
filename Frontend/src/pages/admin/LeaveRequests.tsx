@@ -160,6 +160,15 @@ const LeaveRequests: React.FC = () => {
                 </div>
               </div>
               <span className="status-leave text-xs">{leave.leaveType}</span>
+              <div className="flex flex-col items-end gap-1 px-4 border-l border-glass-border">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Engine Breakdown</span>
+                <div className="flex gap-1">
+                   {leave.clDays > 0 && <span className="px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold border border-success/20">{leave.clDays} CL</span>}
+                   {leave.slDays > 0 && <span className="px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold border border-success/20">{leave.slDays} SL</span>}
+                   {leave.rlDays > 0 && <span className="px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold border border-success/20">{leave.rlDays} RL</span>}
+                   {leave.lwpDays > 0 && <span className="px-1.5 py-0.5 rounded bg-destructive/10 text-destructive text-[10px] font-bold border border-destructive/20">{leave.lwpDays} LWP</span>}
+                </div>
+              </div>
               <span className="text-sm font-mono text-muted-foreground">{formatDate(leave.startDate)} → {formatDate(leave.endDate)}</span>
               <span className="text-sm font-mono text-foreground">{leave.totalDays}d</span>
               <span className={getStatusColor(leave.status)}>{leave.status}</span>

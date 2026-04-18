@@ -191,12 +191,19 @@ const LiveAttendance: React.FC = () => {
                       <td className="px-5 py-4 text-sm font-mono text-muted-foreground">
                         {row.totalBreakTime || 0} min
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={getStatusBadge(row.status)}>{row.status}</span>
-                          {row.leaveType && <span className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">{row.leaveType}</span>}
-                        </div>
-                      </td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className={getStatusBadge(row.status)}>{row.status}</span>
+                        {row.pendingLeave && (
+                          <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="animate-pulse">⚠️</span> Pending {row.leaveType || 'Leave'}
+                          </span>
+                        )}
+                        {!row.pendingLeave && row.leaveType && (
+                          <span className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">{row.leaveType}</span>
+                        )}
+                      </div>
+                    </td>
                     </tr>
                   ))
                 )}

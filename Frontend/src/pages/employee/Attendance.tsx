@@ -145,7 +145,11 @@ const AttendancePage: React.FC = () => {
           {record || isSunday ? (
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5 z-10 w-fit">
               <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${isSunday && (!record || record.status === 'holiday') ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : record?.status === 'leave' ? 'bg-primary/40 text-primary-foreground shadow-sm' : 'bg-indigo-500/40 text-white'}`}>
-                {isSunday && (!record || record.status === 'holiday') ? 'Sunday' : record?.status === 'holiday' ? record.title || 'Holiday' : record?.status}
+                {isSunday && (!record || record.status === 'holiday') ? 'Sunday' : 
+                 record?.status === 'holiday' ? record.title || 'Holiday' : 
+                 record?.status === 'leave' && record.leaveMeta ? (
+                   `${record.leaveMeta.cl > 0 ? record.leaveMeta.cl + ' CL ' : ''}${record.leaveMeta.sl > 0 ? record.leaveMeta.sl + ' SL ' : ''}${record.leaveMeta.lwp > 0 ? record.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                 ) : record?.status}
               </span>
               {record?.checkIn && (
                 <span className="text-[9px] font-mono font-medium text-foreground hidden sm:block mt-1 pl-1">
@@ -295,7 +299,11 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{formatTime(row.checkOut)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
-                      <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{row.status}</span></td>
+                      <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{
+                        row.status === 'leave' && row.leaveMeta ? (
+                          `${row.leaveMeta.cl > 0 ? row.leaveMeta.cl + ' CL ' : ''}${row.leaveMeta.sl > 0 ? row.leaveMeta.sl + ' SL ' : ''}${row.leaveMeta.lwp > 0 ? row.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                        ) : row.status
+                      }</span></td>
                     </tr>
                   ))
                 )}

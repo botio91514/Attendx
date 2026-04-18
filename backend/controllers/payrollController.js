@@ -131,55 +131,66 @@ const getPayrollSummary = async (req, res, next) => {
       const empWorkingDays = countWorkingDays(effectiveStartDate, effectiveEndDate);
 
       const attendance = allAttendance.filter(a => a.userId.toString() === emp._id.toString());
-      let p = 0, l = 0, h = 0;
+      
+      let p = 0, h = 0; 
+      let clDaysInMonth = 0, slDaysInMonth = 0, rlDaysInMonth = 0, lwpDaysInMonth = 0;
+      let attendance_payable = 0;
 
       attendance.forEach(record => {
-        if (record.status === 'present') p++;
-        else if (record.status === 'late') { p++; l++; }
-        else if (record.status === 'half-day') h++;
-      });
-
-      // 🛡️ FINANCIAL AUDIT FIX: Prevent duplicate leave pay for overlapping requests
-      // We count only unique working days covered by all approved leaves
-      const uniquePaidLeaveDates = new Set();
-      // Only count PAID leave types: sick, casual, religious
-      const empLeaves = leaves.filter(lv => 
-        lv.userId.toString() === emp._id.toString() && 
-        lv.leaveType !== 'unpaid'
-      );
-      
-      empLeaves.forEach(lv => {
-        let currLv = new Date(lv.startDate < startDate ? startDate : lv.startDate);
-        const limitLv = new Date(lv.endDate > endDate ? endDate : lv.endDate);
+        // 🛡️ SYNC RULE: Read leaveMeta (Source of Truth)
+        const meta = record.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+        const totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
         
-        while (currLv <= limitLv) {
-          const ds = currLv.toISOString().split('T')[0];
-          const day = currLv.getUTCDay();
-          // Only add if it's a configured working day and not a public holiday
-          if (workingDaysConfig.includes(day) && !holidayDates.includes(ds)) {
-            uniquePaidLeaveDates.add(ds);
-          }
-          currLv.setUTCDate(currLv.getUTCDate() + 1);
+        clDaysInMonth += (meta.cl || 0);
+        slDaysInMonth += (meta.sl || 0);
+        rlDaysInMonth += (meta.rl || 0);
+        lwpDaysInMonth += (meta.lwp || 0);
+
+        // 🛡️ SYNC RULE: Add work credit ONLY if leave < 1.0
+        if (totalLeave < 1.0) {
+          let workCredit = 0;
+          if (record.status === 'present' || record.status === 'late') workCredit = 1.0;
+          else if (record.status === 'half-day') workCredit = 0.5;
+
+          const maxAllowedWork = 1.0 - totalLeave;
+          const actualWorkCredit = Math.min(workCredit, maxAllowedWork);
+          
+          attendance_payable += actualWorkCredit;
+          
+          // Stats for display
+          if (workCredit === 1.0 && actualWorkCredit > 0) p++;
+          else if (workCredit === 0.5 && actualWorkCredit > 0) h++;
         }
       });
 
-      const leaveDaysCount = uniquePaidLeaveDates.size;
+      const paidLeaveDaysInMonth = clDaysInMonth + slDaysInMonth + rlDaysInMonth;
 
+      console.log(`[DEBUG] Final Sync Payroll for ${emp.name}:`, {
+        present: p,
+        halfDay: h,
+        paidLeave: paidLeaveDaysInMonth,
+        lwp: lwpDaysInMonth,
+        attendance_payable
+      });
+
+      const leaveDaysCount = paidLeaveDaysInMonth;
+      
       // 🛡️ FINANCIAL AUDIT FIX: High precision daily rate (no rounding yet)
       const dailyRate = totalWorkingDaysInMonth > 0 ? emp.baseSalary / totalWorkingDaysInMonth : 0;
       
-      // Payable days = Present + Half-day*0.5 + Unique Approved Leaves
+      // Payable days = Present + Half-day*0.5 + Unique Approved Paid Leaves
       const attendancePayable = p + (h * 0.5);
       const payableDays = attendancePayable + leaveDaysCount;
       
-      // Calculate float gross salary
-      const grossSalary = payableDays * dailyRate; 
+      // 🛡️ FINANCIAL AUDIT FIX: Pay ONLY for worked or approved leave days
+      const grossAmount = payableDays * dailyRate;
       const bonus = 0;
-      const deductions = 0;
-      const netSalary = (grossSalary + bonus) - deductions;
+      const otherDeductions = 0;
+      const deductionAmount = otherDeductions;
+      const netSalary = (grossAmount - deductionAmount + bonus);
 
       return {
-        _id: emp._id, // temp ID for preview
+        _id: emp._id,
         userId: emp._id,
         name: emp.name,
         email: emp.email,
@@ -191,19 +202,23 @@ const getPayrollSummary = async (req, res, next) => {
         stats: {
           present: p,
           halfDay: h,
-          absent: Math.max(0, empWorkingDays - (p + h) - leaveDaysCount),
+          absent: Math.max(0, empWorkingDays - (p + h) - (paidLeaveDaysInMonth + lwpDaysInMonth)),
           late: l,
-          leave: leaveDaysCount
+          leave: paidLeaveDaysInMonth,
+          lwp: lwpDaysInMonth,
+          cl: clDaysInMonth, // Added for clarity
+          sl: slDaysInMonth,
+          rl: rlDaysInMonth
         },
         calculations: {
           totalWorkingDays: totalWorkingDaysInMonth,
           expectedWorkingDays: empWorkingDays, 
           payableDays: parseFloat(Math.min(empWorkingDays, payableDays).toFixed(2)),
-          dailyRate: dailyRate, // Keep float for precision
-          grossSalary: grossSalary, // Keep float
+          dailyRate: dailyRate,
+          grossAmount: grossAmount,
+          deductionAmount: deductionAmount,
           bonus: bonus,
-          deductions: deductions,
-          netSalary: Math.round(netSalary) // Round only the final payout!
+          netSalary: Math.round(netSalary)
         }
       };
     });
@@ -250,12 +265,16 @@ const processPayroll = async (req, res, next) => {
       halfDays: item.stats.halfDay,
       lateDays: item.stats.late,
       absentDays: item.stats.absent,
+      clDays: item.stats.cl || 0,
+      slDays: item.stats.sl || 0,
+      rlDays: item.stats.rl || 0,
+      lwpDays: item.stats.lwp || 0,
       payableDays: item.calculations.payableDays,
       dailyRate: item.calculations.dailyRate,
-      grossSalary: item.calculations.grossSalary,
+      grossAmount: item.calculations.grossAmount,
+      deductionAmount: item.calculations.deductionAmount,
       bonus: item.calculations.bonus || 0,
-      deductions: item.calculations.deductions || 0,
-      netSalary: item.calculations.netSalary || item.calculations.grossSalary,
+      netSalary: item.calculations.netSalary || item.calculations.grossAmount,
       status: 'finalized',
       processedBy: req.user._id
     }));
@@ -489,29 +508,58 @@ const getMyPayroll = async (req, res, next) => {
     const empWorkingDays = countWorkingDays(effectiveStartDate, effectiveEndDate);
 
     let p = 0, l = 0, h = 0;
-    attendanceRecords.forEach(record => {
-      if (record.status === 'present') p++;
-      else if (record.status === 'late') { p++; l++; }
-      else if (record.status === 'half-day') h++;
-    });
+    let clDaysInMonth = 0, slDaysInMonth = 0, rlDaysInMonth = 0, lwpDaysInMonth = 0;
+    let attendance_payable = 0;
 
-    const uniquePaidLeaveDates = new Set();
-    leaves.forEach(lv => {
-      let currLv = new Date(lv.startDate < startDate ? startDate : lv.startDate);
-      const limitLv = new Date(lv.endDate > endDate ? endDate : lv.endDate);
-      while (currLv <= limitLv) {
-        const ds = currLv.toISOString().split('T')[0];
-        const day = currLv.getUTCDay();
-        if (workingDaysConfig.includes(day) && !holidayDates.includes(ds)) uniquePaidLeaveDates.add(ds);
-        currLv.setUTCDate(currLv.getUTCDate() + 1);
+    attendanceRecords.forEach(record => {
+      // 🛡️ SYNC RULE: Read leaveMeta (Source of Truth)
+      const meta = record.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+      const totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
+
+      clDaysInMonth += (meta.cl || 0);
+      slDaysInMonth += (meta.sl || 0);
+      rlDaysInMonth += (meta.rl || 0);
+      lwpDaysInMonth += (meta.lwp || 0);
+
+      // 🛡️ SYNC RULE: Add work credit ONLY if leave < 1.0 (Rule 3)
+      if (totalLeave < 1.0) {
+        let workCredit = 0;
+        if (record.status === 'present' || record.status === 'late') workCredit = 1.0;
+        else if (record.status === 'half-day') workCredit = 0.5;
+
+        const maxAllowedWork = 1.0 - totalLeave;
+        const actualWorkCredit = Math.min(workCredit, maxAllowedWork);
+
+        attendance_payable += actualWorkCredit;
+
+        // Stats tracking
+        if (workCredit === 1.0 && actualWorkCredit > 0) p++;
+        else if (workCredit === 0.5 && actualWorkCredit > 0) h++;
+        if (record.status === 'late') l++;
       }
     });
 
-    const leaveDaysCount = uniquePaidLeaveDates.size;
+    const paidLeaveDaysInMonth = clDaysInMonth + slDaysInMonth + rlDaysInMonth;
+
+    console.log(`[DEBUG] My Sync Payroll:`, {
+      present: p,
+      halfDay: h,
+      paidLeave: paidLeaveDaysInMonth,
+      lwp: lwpDaysInMonth,
+      attendance_payable
+    });
+
+    const leaveDaysCount = paidLeaveDaysInMonth;
     const dailyRate = totalWorkingDaysInMonth > 0 ? req.user.baseSalary / totalWorkingDaysInMonth : 0;
     const attendancePayable = p + (h * 0.5);
     const payableDays = attendancePayable + leaveDaysCount;
-    const grossSalary = payableDays * dailyRate;
+
+    // 🛡️ FINANCIAL AUDIT FIX: Pay ONLY for worked or approved leave days
+    const grossAmount = payableDays * dailyRate;
+    const bonus = 0;
+    const otherDeductions = 0;
+    const deductionAmount = otherDeductions;
+    const netSalary = (grossAmount - deductionAmount + bonus);
 
     const draftData = {
       userId: req.user._id,
@@ -522,14 +570,18 @@ const getMyPayroll = async (req, res, next) => {
       presentDays: p,
       halfDays: h,
       lateDays: l,
-      absentDays: Math.max(0, empWorkingDays - (p + h) - leaveDaysCount),
+      absentDays: Math.max(0, empWorkingDays - (p + h) - (paidLeaveDaysInMonth + lwpDaysInMonth)),
+      clDays: clDaysInMonth,
+      slDays: slDaysInMonth,
+      rlDays: rlDaysInMonth,
+      lwpDays: lwpDaysInMonth,
       leaveDays: leaveDaysCount,
       payableDays: parseFloat(Math.min(empWorkingDays, payableDays).toFixed(2)),
       dailyRate: dailyRate,
-      grossSalary: grossSalary,
+      grossAmount: grossAmount,
+      deductionAmount: deductionAmount,
       bonus: 0,
-      deductions: 0,
-      netSalary: Math.round(grossSalary),
+      netSalary: Math.round(netSalary),
       workingDays: totalWorkingDaysInMonth
     };
 

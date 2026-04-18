@@ -39,6 +39,22 @@ const PayrollSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  clDays: {
+    type: Number,
+    default: 0
+  },
+  slDays: {
+    type: Number,
+    default: 0
+  },
+  rlDays: {
+    type: Number,
+    default: 0
+  },
+  lwpDays: {
+    type: Number,
+    default: 0
+  },
   payableDays: {
     type: Number,
     required: true
@@ -47,15 +63,15 @@ const PayrollSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  grossSalary: {
+  grossAmount: { // Total possible if no LWP
     type: Number,
     required: true
   },
-  bonus: {
+  deductionAmount: { // LWP penalty + other deductions
     type: Number,
     default: 0
   },
-  deductions: {
+  bonus: {
     type: Number,
     default: 0
   },

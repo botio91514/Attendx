@@ -10,9 +10,13 @@ const leaveSchema = new mongoose.Schema(
     },
     leaveType: {
       type: String,
-      enum: ['sick', 'casual', 'religious', 'unpaid'],
-      required: [true, 'Leave type is required'],
+      enum: ['sick', 'casual', 'religious', 'unpaid', 'general'],
+      default: 'general'
     },
+    clDays: { type: Number, default: 0 },
+    slDays: { type: Number, default: 0 },
+    rlDays: { type: Number, default: 0 },
+    lwpDays: { type: Number, default: 0 },
     startDate: {
       type: Date,
       required: [true, 'Start date is required'],
@@ -34,6 +38,18 @@ const leaveSchema = new mongoose.Schema(
       type: Map,
       of: [String],
       default: {}
+    },
+    dailyBreakdown: [{
+      date: String,
+      leaveType: {
+        type: String,
+        enum: ['cl', 'sl', 'rl', 'lwp']
+      },
+      days: { type: Number, default: 1 }
+    }],
+    attachment: {
+      type: String,
+      default: null
     },
     reason: {
       type: String,

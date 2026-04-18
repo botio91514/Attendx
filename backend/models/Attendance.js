@@ -66,6 +66,12 @@ const attendanceSchema = new mongoose.Schema(
       isOnBreak: { type: Boolean, default: false },
       exceededPolicy: { type: Boolean, default: false },
       alertSent: { type: Boolean, default: false }
+    },
+    leaveMeta: {
+      cl: { type: Number, default: 0 },
+      sl: { type: Number, default: 0 },
+      rl: { type: Number, default: 0 },
+      lwp: { type: Number, default: 0 }
     }
   },
   {
@@ -96,6 +102,11 @@ attendanceSchema.methods.calculateWorkingHours = function () {
 
 // Method to determine status based on check-in time and working hours
 attendanceSchema.methods.determineStatus = function (settings = null) {
+  // If manual override for leave or holiday, keep it
+  if (['leave', 'holiday'].includes(this.status)) {
+    return this.status;
+  }
+
   // If no check-in, status remains absent
   if (!this.checkIn) {
     return 'absent';

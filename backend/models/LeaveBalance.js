@@ -32,6 +32,54 @@ leaveBalanceSchema.pre('save', function (next) {
   next();
 });
 
+leaveBalanceSchema.methods.getAccrualSummary = function (joiningDate) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  
+  let monthsWorked = currentMonth;
+  if (joiningDate) {
+    const join = new Date(joiningDate);
+    if (join.getFullYear() === currentYear) {
+      monthsWorked = Math.max(1, currentMonth - join.getMonth());
+    }
+  }
+
+  const clAccrued = Math.min(12, monthsWorked * 1);
+  const slAccrued = Math.min(6, monthsWorked * 0.5);
+  const rlQuota = 2;
+
+  return {
+    year: this.year,
+    casual: {
+      total: 12,
+      accrued: clAccrued,
+      used: this.casual.used,
+      available: Math.max(0, clAccrued - this.casual.used),
+      monthlyLimit: 1
+    },
+    sick: {
+      total: 6,
+      accrued: slAccrued,
+      used: this.sick.used,
+      available: Math.max(0, slAccrued - this.sick.used),
+      monthlyLimit: 0.5
+    },
+    religious: {
+      total: 2,
+      accrued: rlQuota,
+      used: this.religious.used,
+      available: Math.max(0, rlQuota - this.religious.used),
+      monthlyLimit: 2 // Assuming no strict monthly limit for RL, or just keeping the quota
+    },
+    unpaid: {
+      total: 'Unlimited',
+      used: this.unpaid.used,
+      available: 'Unlimited'
+    }
+  };
+};
+
 leaveBalanceSchema.methods.getSummary = function () {
   return {
     year: this.year,

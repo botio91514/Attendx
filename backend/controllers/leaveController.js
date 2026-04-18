@@ -11,6 +11,8 @@ const {
   getLeaveBreakdown,
   getCurrentYear,
   dateRangesOverlap,
+  calculateAccrualBalance,
+  distributeLeave
 } = require('../utils/leaveHelpers');
 const { sendEmail } = require('../utils/emailService');
 const { 
@@ -21,14 +23,14 @@ const {
 const { emitToAdmins, emitToUser } = require('../socket/socketManager.js');
 
 /**
- * @desc    Apply for leave
+ * @desc    Apply for leave (Accrual Engine)
  */
 const applyLeave = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array().map(e => e.msg) });
 
-    const { leaveType, startDate, endDate, reason } = req.body;
+    const { startDate, endDate, reason, isHalfDay } = req.body;
     const userId = req.user._id;
 
     // 1. Fetch Policies
@@ -37,109 +39,107 @@ const applyLeave = async (req, res, next) => {
       Holiday.find({ isActive: true })
     ]);
 
-    const workingDays = settings.workingDays || [1, 2, 3, 4, 5, 6];
-    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
+    const holidayStrings = holidays.map(h => new Date(h.date).toISOString().split('T')[0]);
 
-    // 2. BACKDATED ABUSE PROTECTION
-    const startObj = new Date(startDate);
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const diffDays = Math.ceil((today - startObj) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays > settings.backdatedLeaveLimit) {
-      return res.status(400).json({
-        success: false,
-        message: `Backdated leave limit exceeded. You can only apply for leaves within ${settings.backdatedLeaveLimit} days of the past.`
-      });
-    }
-
-    // 3. PAYROLL LOCK PROTECTION (Check all months involved)
-    const breakdownData = getLeaveBreakdown(startDate, endDate, workingDays, holidayDates);
-    if (breakdownData.total === 0) return res.status(400).json({ success: false, message: 'No working days found in the selected range.' });
-
-    for (const year in breakdownData.breakdown) {
-      const dates = breakdownData.breakdown[year];
-      const months = [...new Set(dates.map(d => new Date(d).getMonth() + 1))];
-      
-      for (const m of months) {
-        const finalized = await Payroll.findOne({ month: m, year: parseInt(year) });
-        if (finalized) {
-          return res.status(400).json({
-            success: false,
-            message: `Selected dates span into ${new Date(0, m-1).toLocaleString('default', { month: 'long' })} ${year}, which has a finalized payroll. Application blocked.`
-          });
-        }
-      }
-    }
-
-    // 4. PRECISE OVERLAP & DAILY LIMIT CHECK
-    const existingLeaves = await Leave.find({
-      userId,
-      status: { $in: ['pending', 'approved'] },
-      $or: [
-        { startDate: { $lte: endDate }, endDate: { $gte: startDate } }
-      ]
+    // 🛡️ TIMEZONE-SAFE FILTERING (Sundays and Holidays)
+    const allDates = getDatesBetween(new Date(startDate), new Date(endDate)).filter(dStr => {
+      const [y, m, d] = dStr.split('-').map(Number);
+      const isSunday = new Date(y, m - 1, d).getDay() === 0;
+      return !isSunday && !holidayStrings.includes(dStr);
     });
 
-    const datesToApply = breakdownData.breakdown;
-    const requestedAllDates = Object.values(datesToApply).flat();
+    if (allDates.length === 0) {
+      return res.status(400).json({ success: false, message: 'No working days found in selected range (Sundays or Holidays)' });
+    }
 
-    for (const date of requestedAllDates) {
-      let dailyTotal = 0;
-      // Calculate how much leave is already taken on this specific date
-      existingLeaves.forEach(lv => {
-        const lvStart = lv.startDate.toISOString().split('T')[0];
-        const lvEnd = lv.endDate.toISOString().split('T')[0];
-        if (date >= lvStart && date <= lvEnd) {
-          // If it's a half-day, add 0.5, else 1
-          dailyTotal += lv.isHalfDay ? 0.5 : 1;
+    // 🛡️ OVERLAP CHECK (Using dailyBreakdown for precision)
+    const existingLeaves = await Leave.find({
+      userId,
+      status: { $in: ['pending', 'approved'] }
+    });
+    
+    const bookedDates = new Set();
+    existingLeaves.forEach(lv => {
+      if (lv.dailyBreakdown && lv.dailyBreakdown.length > 0) {
+        lv.dailyBreakdown.forEach(b => bookedDates.add(b.date));
+      } else {
+        // Fallback for older records
+        getDatesBetween(lv.startDate, lv.endDate).forEach(d => bookedDates.add(d));
+      }
+    });
+
+    if (allDates.some(d => bookedDates.has(d))) {
+      return res.status(400).json({ success: false, message: 'Overlapping leave exists on these dates.' });
+    }
+
+    // 4. STRICT MONTHLY & YEARLY LIMIT ENGINE
+    const monthsInvolved = [...new Set(allDates.map(d => d.slice(0, 7)))];
+    const currentYear = new Date(startDate).getFullYear().toString();
+
+    const monthlyUsed = {};
+    monthsInvolved.forEach(m => monthlyUsed[m] = { cl: 0, sl: 0 });
+    let yearlyRLUsed = 0;
+
+    existingLeaves.forEach(lv => {
+      (lv.dailyBreakdown || []).forEach(day => {
+        const monthKey = day.date.slice(0, 7);
+        const yearKey = day.date.slice(0, 4);
+
+        if (monthlyUsed[monthKey]) {
+          const dayVal = day.days || (lv.isHalfDay ? 0.5 : 1);
+          if (day.leaveType === 'cl') monthlyUsed[monthKey].cl += dayVal;
+          if (day.leaveType === 'sl') monthlyUsed[monthKey].sl += dayVal;
+        }
+
+        if (yearKey === currentYear && day.leaveType === 'rl') {
+           yearlyRLUsed += (day.days || (lv.isHalfDay ? 0.5 : 1));
         }
       });
+    });
 
-      // If already 1 day full, block
-      if (dailyTotal >= 1) {
-        return res.status(400).json({
-          success: false,
-          message: `You already have a full day leave or overlapping requests on ${date}.`
-        });
-      }
+    const selectedType = req.body.leaveType || 'casual';
+    const typeKeyMap = { casual: 'cl', sick: 'sl', religious: 'rl', unpaid: 'lwp' };
+    const internalKey = typeKeyMap[selectedType] || 'lwp';
+
+    const totalDaysValue = isHalfDay ? 0.5 : allDates.length;
+    const breakdown = distributeLeave(allDates, internalKey, monthlyUsed, yearlyRLUsed, isHalfDay);
+
+    if (breakdown.sl > 2 && !req.body.attachment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Medical certificate attachment is required for sick leave exceeding 2 days.'
+      });
     }
 
-    // 5. YEAR BOUNDARY BALANCE CHECK
-    if (leaveType !== 'unpaid') {
-      for (const year in breakdownData.breakdown) {
-        const count = breakdownData.breakdown[year].length;
-        let balance = await LeaveBalance.findOne({ userId, year: parseInt(year) });
-        if (!balance) balance = await LeaveBalance.create({ userId, year: parseInt(year) });
-        
-        if (balance[leaveType].remaining < count) {
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient ${leaveType} balance for year ${year}. Needed: ${count}, Available: ${balance[leaveType].remaining}`
-          });
-        }
-      }
-    }
-
-    // 6. Create Leave Record
+    // 5. Create Leave Record
     const leave = await Leave.create({
       userId,
-      leaveType,
+      leaveType: selectedType,
       startDate,
       endDate,
-      totalDays: breakdownData.total,
-      yearBreakdown: breakdownData.breakdown,
+      totalDays: totalDaysValue,
+      clDays: breakdown.cl,
+      slDays: breakdown.sl,
+      rlDays: breakdown.rl,
+      lwpDays: breakdown.lwp,
+      dailyBreakdown: breakdown.dailyBreakdown,
       reason,
+      attachment: req.body.attachment || null,
+      isHalfDay,
       status: 'pending'
     });
 
-    res.status(201).json({ success: true, message: 'Leave request submitted successfully' });
+    res.status(201).json({ 
+      success: true, 
+      message: 'Leave request submitted successfully',
+      data: { leave }
+    });
 
-    // Notifications
+    // Notify admins
     emitToAdmins('notification:new', {
       type: 'leave_request',
       title: '📋 New Leave Request',
-      message: `${req.user.name} applied for ${leaveType} (${breakdownData.total} days).`,
+      message: `${req.user.name} applied for ${totalDaysValue} days.`,
       link: '/admin/leaves'
     });
   } catch (error) {
@@ -148,7 +148,7 @@ const applyLeave = async (req, res, next) => {
 };
 
 /**
- * @desc    Approve leave (Hardened)
+ * @desc    Approve leave (Accrual Engine)
  */
 const approveLeave = async (req, res, next) => {
   try {
@@ -159,76 +159,111 @@ const approveLeave = async (req, res, next) => {
     if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
     if (leave.status !== 'pending') return res.status(400).json({ success: false, message: `Request is already ${leave.status}` });
 
-    // 1. PAYROLL LOCK PROTECTION (Check again)
-    for (let [year, dates] of leave.yearBreakdown) {
+    // 1. PAYROLL LOCK PROTECTION
+    for (const [year, dates] of leave.yearBreakdown) {
       const months = [...new Set(dates.map(d => new Date(d).getMonth() + 1))];
       for (const m of months) {
         const finalized = await Payroll.findOne({ month: m, year: parseInt(year) });
         if (finalized) {
           return res.status(400).json({
             success: false,
-            message: 'This leave belongs to a finalized payroll period. Please unlock payroll to proceed.'
+            message: 'Payroll already finalized for this period. Unlock to proceed.'
           });
         }
       }
     }
 
-    // 2. ATOMIC BALANCE DEDUCTION
-    if (leave.leaveType !== 'unpaid') {
-      for (let [year, dates] of leave.yearBreakdown) {
-        const count = dates.length;
-        const result = await LeaveBalance.findOneAndUpdate(
-          {
-            userId: leave.userId._id,
-            year: parseInt(year),
-            [`${leave.leaveType}.remaining`]: { $gte: count }
-          },
-          { 
-            $inc: { [`${leave.leaveType}.used`]: count, [`${leave.leaveType}.remaining`]: -count } 
-          },
-          { new: true }
-        );
-
-        if (!result) {
-          return res.status(400).json({
-            success: false,
-            message: `Approval failed: Insufficient ${leave.leaveType} balance in year ${year} (Atomic check failed).`
-          });
+    // 2. UPDATE BALANCE (Used counts)
+    const currentYear = getCurrentYear();
+    await LeaveBalance.findOneAndUpdate(
+      { userId: leave.userId._id, year: currentYear },
+      { 
+        $inc: { 
+          'casual.used': leave.clDays,
+          'sick.used': leave.slDays,
+          'religious.used': leave.rlDays,
+          'unpaid.used': leave.lwpDays
         }
       }
+    );
+
+    // 3. Update Status (🛡️ APPROVAL SAFETY: Atomic check)
+    const updatedLeave = await Leave.findOneAndUpdate(
+      { _id: id, status: 'pending' },
+      { 
+        $set: { 
+          status: 'approved',
+          reviewedBy: adminId,
+          reviewedAt: new Date()
+        } 
+      },
+      { new: true }
+    );
+
+    if (!updatedLeave) {
+      return res.status(400).json({ success: false, message: 'Leave is no longer pending or already processed' });
     }
 
-    // 3. Update Status
-    leave.status = 'approved';
-    leave.reviewedBy = adminId;
-    leave.reviewedAt = new Date();
-    await leave.save();
-
-    // 4. SYNC ATTENDANCE
+    // 4. SYNC ATTENDANCE (Source of Truth)
     const Attendance = require('../models/Attendance');
-    for (let [year, dates] of leave.yearBreakdown) {
-      for (const dateStr of dates) {
-        await Attendance.findOneAndUpdate(
-          { userId: leave.userId._id, date: dateStr, status: 'absent' },
-          { $set: { status: 'leave', notes: `Converted from absent (Leave ID: ${id})` } }
-        );
+    
+    // Group breakdown by date to handle split days correctly
+    const dateMap = {};
+    for (const item of updatedLeave.dailyBreakdown) {
+      if (!dateMap[item.date]) dateMap[item.date] = { cl: 0, sl: 0, rl: 0, lwp: 0 };
+      const val = item.days || (updatedLeave.isHalfDay ? 0.5 : 1);
+      const type = item.leaveType.toLowerCase();
+      if (dateMap[item.date].hasOwnProperty(type)) {
+        dateMap[item.date][type] += val;
       }
     }
+
+    const syncResults = [];
+    for (const [date, meta] of Object.entries(dateMap)) {
+      const totalLeave = meta.cl + meta.sl + meta.rl + meta.lwp;
+      const notes = `Approved Leave: ${updatedLeave.leaveType.toUpperCase()} (ID: ${id})`;
+      
+      let record = await Attendance.findOne({ userId: updatedLeave.userId._id, date });
+      
+      if (record) {
+        // Update existing record
+        record.leaveMeta = meta;
+        record.notes = notes;
+        
+        // Priority: If full leave (1.0), force 'leave' status
+        if (totalLeave >= 1.0) record.status = 'leave';
+        // If partial leave, only set 'leave' status if currently 'absent'
+        else if (record.status === 'absent') record.status = 'leave';
+        
+        await record.save();
+      } else {
+        // Create new record
+        record = await Attendance.create({
+          userId: updatedLeave.userId._id,
+          date,
+          status: 'leave',
+          leaveMeta: meta,
+          notes
+        });
+      }
+      syncResults.push({ date, totalLeave, status: record.status });
+    }
+
+    console.log(`[DEBUG] Final Sync for Leave ${id}:`, syncResults);
 
     // 5. Audit Log
     await AuditLog.create({
       action: 'LEAVE_APPROVE',
       performedBy: adminId,
-      details: `Approved ${leave.leaveType} leave for ${leave.userId.name} (${leave.totalDays} days)`
+      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}.`
     });
 
     res.status(200).json({ success: true, message: 'Leave request approved' });
 
-    // Notification
-    emitToUser(leave.userId._id.toString(), 'notification:new', {
+    emitToUser(updatedLeave.userId._id.toString(), 'notification:new', {
       type: 'leave_approved',
       title: '✅ Leave Approved',
-      message: `Your ${leave.leaveType} leave has been approved.`,
+      message: 'Your leave request has been approved.',
       link: '/leaves'
     });
   } catch (error) {
@@ -281,7 +316,7 @@ const getMyBalance = async (req, res, next) => {
     const year = getCurrentYear();
     let balance = await LeaveBalance.findOne({ userId, year });
     if (!balance) balance = await LeaveBalance.create({ userId, year });
-    res.status(200).json({ success: true, data: { balance: balance.getSummary(), year } });
+    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(req.user.joiningDate), year } });
   } catch (error) { next(error); }
 };
 
@@ -301,11 +336,38 @@ const cancelLeave = async (req, res, next) => {
     const { id } = req.params;
     const leave = await Leave.findOne({ _id: id, userId: req.user._id });
     if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
-    if (leave.status !== 'pending') return res.status(400).json({ success: false, message: 'Can only cancel pending requests' });
+    
+    // Only allow cancelling if pending or approved
+    if (!['pending', 'approved'].includes(leave.status)) {
+      return res.status(400).json({ success: false, message: `Cannot cancel a ${leave.status} request` });
+    }
+
+    // 🛡️ LEAVE CANCELLATION FIX: Reverse balance if it was already approved
+    if (leave.status === 'approved') {
+      const currentYear = getCurrentYear();
+      await LeaveBalance.findOneAndUpdate(
+        { userId: leave.userId, year: currentYear },
+        { 
+          $inc: { 
+            'casual.used': -leave.clDays,
+            'sick.used': -leave.slDays,
+            'religious.used': -leave.rlDays,
+            'unpaid.used': -leave.lwpDays
+          }
+        }
+      );
+
+      // Revert Attendance Marks (Change 'leave' back to 'absent')
+      const Attendance = require('../models/Attendance');
+      await Attendance.updateMany(
+        { userId: leave.userId, date: { $in: leave.dailyBreakdown.map(i => i.date) }, status: 'leave' },
+        { $set: { status: 'absent', notes: 'Leave Cancelled: Reverted to Absent' } }
+      );
+    }
 
     leave.status = 'cancelled';
     await leave.save();
-    res.status(200).json({ success: true, message: 'Leave request cancelled' });
+    res.status(200).json({ success: true, message: 'Leave request cancelled and balance restored' });
   } catch (error) { next(error); }
 };
 
@@ -315,16 +377,15 @@ const getEmployeeBalance = async (req, res, next) => {
     const year = getCurrentYear();
     let balance = await LeaveBalance.findOne({ userId, year });
     if (!balance) balance = await LeaveBalance.create({ userId, year });
-    res.status(200).json({ success: true, data: { balance: balance.getSummary(), year } });
+    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(), year } });
   } catch (error) { next(error); }
 };
 
 // Validation rules
 const applyLeaveValidation = [
-  body('leaveType').isIn(['sick', 'casual', 'religious', 'unpaid']),
-  body('startDate').isISO8601(),
-  body('endDate').isISO8601(),
-  body('reason').notEmpty()
+  body('startDate').isISO8601().withMessage('Valid start date is required'),
+  body('endDate').isISO8601().withMessage('Valid end date is required'),
+  body('reason').notEmpty().withMessage('Reason is required')
 ];
 
 const myLeavesValidation = [
