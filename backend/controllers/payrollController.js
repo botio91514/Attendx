@@ -132,11 +132,14 @@ const getPayrollSummary = async (req, res, next) => {
 
       const attendance = allAttendance.filter(a => a.userId.toString() === emp._id.toString());
       
-      let p = 0, h = 0; 
+      let p = 0, h = 0, lateCount = 0; 
       let clDaysInMonth = 0, slDaysInMonth = 0, rlDaysInMonth = 0, lwpDaysInMonth = 0;
       let attendance_payable = 0;
 
       attendance.forEach(record => {
+        // Stats for absolute counts (independent of pay)
+        if (record.status === 'late') lateCount++;
+
         // 🛡️ SYNC RULE: Read leaveMeta (Source of Truth)
         const meta = record.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
         const totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
@@ -157,7 +160,7 @@ const getPayrollSummary = async (req, res, next) => {
           
           attendance_payable += actualWorkCredit;
           
-          // Stats for display
+          // Stats for payroll summary display
           if (workCredit === 1.0 && actualWorkCredit > 0) p++;
           else if (workCredit === 0.5 && actualWorkCredit > 0) h++;
         }
@@ -203,7 +206,7 @@ const getPayrollSummary = async (req, res, next) => {
           present: p,
           halfDay: h,
           absent: Math.max(0, empWorkingDays - (p + h) - (paidLeaveDaysInMonth + lwpDaysInMonth)),
-          late: l,
+          late: lateCount,
           leave: paidLeaveDaysInMonth,
           lwp: lwpDaysInMonth,
           cl: clDaysInMonth, // Added for clarity
