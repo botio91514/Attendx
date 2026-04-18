@@ -148,7 +148,7 @@ const AttendancePage: React.FC = () => {
                 {isSunday && (!record || record.status === 'holiday') ? 'Sunday' : 
                  record?.status === 'holiday' ? record.title || 'Holiday' : 
                  record?.status === 'leave' && record.leaveMeta ? (
-                   `${record.leaveMeta.cl > 0 ? record.leaveMeta.cl + ' CL ' : ''}${record.leaveMeta.sl > 0 ? record.leaveMeta.sl + ' SL ' : ''}${record.leaveMeta.lwp > 0 ? record.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                   `${(record.leaveMeta.cl || 0) > 0 ? record.leaveMeta.cl + ' CL ' : ''}${(record.leaveMeta.sl || 0) > 0 ? record.leaveMeta.sl + ' SL ' : ''}${(record.leaveMeta.lwp || 0) > 0 ? record.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
                  ) : record?.status}
               </span>
               {record?.checkIn && (
@@ -301,7 +301,7 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
                       <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{
                         row.status === 'leave' && row.leaveMeta ? (
-                          `${row.leaveMeta.cl > 0 ? row.leaveMeta.cl + ' CL ' : ''}${row.leaveMeta.sl > 0 ? row.leaveMeta.sl + ' SL ' : ''}${row.leaveMeta.lwp > 0 ? row.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                          `${(row.leaveMeta.cl || 0) > 0 ? row.leaveMeta.cl + ' CL ' : ''}${(row.leaveMeta.sl || 0) > 0 ? row.leaveMeta.sl + ' SL ' : ''}${(row.leaveMeta.lwp || 0) > 0 ? row.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
                         ) : row.status
                       }</span></td>
                     </tr>
