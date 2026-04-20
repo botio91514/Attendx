@@ -338,59 +338,99 @@ const exportBulkLeaveCSV = async (req, res) => {
 // 7. Bulk Payroll CSV
 const exportBulkPayrollCSV = async (req, res) => {
   try {
-    const month  = parseInt(req.query.month  || new Date().getMonth() + 1);
-    const year   = parseInt(req.query.year   || new Date().getFullYear());
-    const { startStr, endStr } = getMonthRange(year, month);
-
-    const employees = await User.find({ role: 'employee', isActive: true })
-      .select('name employeeId department baseSalary');
-
-    const holidays = await Holiday.find({ date: { $gte: new Date(startStr), $lte: new Date(endStr) } });
-    const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
-
-    const settings = await Settings.getSettings();
-    const workingDaysConfig = settings.workingDays || [1, 2, 3, 4, 5];
-
-    let totalWorkingDays = 0;
-    let tempDate = new Date(startStr);
-    while (tempDate <= new Date(endStr)) {
-      const day = tempDate.getDay();
-      if (workingDaysConfig.includes(day) && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
-      tempDate.setDate(tempDate.getDate() + 1);
-    }
-
+    const month = parseInt(req.query.month || new Date().getMonth() + 1);
+    const year = parseInt(req.query.year || new Date().getFullYear());
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const headers = ['Employee Name','Employee ID','Department','Month/Year','Base Salary','Working Days','Present Days','Half Days','Absent Days','Daily Rate','Net Payable Days','Gross Salary'];
+    const monthName = monthNames[month - 1];
 
-    const rows = [];
-    for (const emp of employees) {
-      const attendance = await Attendance.find({ userId: emp._id, date: { $gte: startStr, $lte: endStr } });
-      let present = 0, halfDay = 0, late = 0;
-      attendance.forEach(r => {
-        if (r.status === 'present') present++;
-        else if (r.status === 'late') { present++; late++; }
-        else if (r.status === 'half-day') halfDay++;
-      });
-      const absent = totalWorkingDays - present - halfDay;
-      const payableDays = present + (halfDay * 0.5);
-      const dailyRate  = totalWorkingDays > 0 ? (emp.baseSalary || 0) / totalWorkingDays : 0;
-      const grossSalary = Math.round(payableDays * dailyRate);
+    // 🛡️ FINANCIAL AUDIT FIX: Check for finalized records first
+    const finalizedRecords = await Payroll.find({ month, year })
+      .populate('userId', 'name employeeId department baseSalary');
 
-      rows.push([
-        emp.name, emp.employeeId, emp.department || 'N/A',
-        `${monthNames[month-1]} ${year}`,
-        `${emp.baseSalary || 0}`,
-        totalWorkingDays, present, halfDay, Math.max(0, absent),
-        `${Math.round(dailyRate)}`,
-        payableDays, grossSalary
+    const headers = [
+      'Employee Name', 'Employee ID', 'Department', 'Month/Year', 
+      'Base Salary', 'Working Days', 'Present Days', 'Half Days', 
+      'Absent Days', 'LWP Days', 'Paid Leaves (CL+SL+RL)',
+      'Daily Rate', 'Total Payable Days', 'Gross Salary', 
+      'Bonus', 'Deductions (Manual + LWP)', 'Net Salary', 'Status'
+    ];
+
+    let rows = [];
+
+    if (finalizedRecords.length > 0) {
+      // 🏆 USE LOCKED SNAPSHOTS
+      rows = finalizedRecords.map(p => [
+        p.userId?.name || 'N/A',
+        p.userId?.employeeId || 'N/A',
+        p.userId?.department || 'N/A',
+        `${monthName} ${year}`,
+        p.baseSalary,
+        p.workingDays,
+        p.presentDays,
+        p.halfDays,
+        p.absentDays,
+        p.lwpDays || 0,
+        (p.clDays || 0) + (p.slDays || 0) + (p.rlDays || 0),
+        Math.round(p.dailyRate),
+        p.payableDays,
+        Math.round(p.grossAmount),
+        p.bonus || 0,
+        Math.round(p.deductionAmount || 0),
+        Math.round(p.netSalary),
+        (p.status || 'finalized').toUpperCase()
       ].map(f => `"${f}"`).join(','));
+    } else {
+      // 🏗️ FALLBACK: LIVE DRAFT CALCULATION
+      const { startStr, endStr } = getMonthRange(year, month);
+      const employees = await User.find({ role: 'employee', isActive: true })
+        .select('name employeeId department baseSalary');
+      
+      const holidays = await Holiday.find({ date: { $gte: new Date(startStr), $lte: new Date(endStr) } });
+      const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
+      
+      const settings = await Settings.getSettings();
+      const workingDaysConfig = settings.workingDays || [1, 2, 3, 4, 5];
+      
+      let totalWorkingDays = 0;
+      let tempDate = new Date(startStr);
+      while (tempDate <= new Date(endStr)) {
+        if (workingDaysConfig.includes(tempDate.getDay()) && !holidayDates.includes(tempDate.toISOString().split('T')[0])) totalWorkingDays++;
+        tempDate.setDate(tempDate.getDate() + 1);
+      }
+
+      for (const emp of employees) {
+        const attendance = await Attendance.find({ userId: emp._id, date: { $gte: startStr, $lte: endStr } });
+        let present = 0, halfDay = 0;
+        let pLeaves = 0, lwp = 0;
+        
+        attendance.forEach(r => {
+          if (r.status === 'present' || r.status === 'late') present++;
+          else if (r.status === 'half-day') halfDay++;
+          
+          const meta = r.leaveMeta || {};
+          pLeaves += (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0);
+          lwp += (meta.lwp || 0);
+        });
+
+        const payableDays = present + (halfDay * 0.5) + pLeaves;
+        const dailyRate = totalWorkingDays > 0 ? (emp.baseSalary || 0) / totalWorkingDays : 0;
+        const grossSalary = Math.round(payableDays * dailyRate);
+
+        rows.push([
+          emp.name, emp.employeeId, emp.department || 'N/A', `${monthName} ${year}`,
+          emp.baseSalary || 0, totalWorkingDays, present, halfDay,
+          Math.max(0, totalWorkingDays - present - halfDay - pLeaves - lwp),
+          lwp, pLeaves, Math.round(dailyRate), payableDays,
+          grossSalary, 0, 0, grossSalary, 'DRAFT'
+        ].map(f => `"${f}"`).join(','));
+      }
     }
 
     const bom = '\uFEFF';
     const csv = bom + [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="payroll_${monthNames[month-1]}_${year}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="payroll_${monthName}_${year}.csv"`);
     res.status(200).send(csv);
   } catch (err) {
     console.error('Bulk Payroll CSV Error:', err);

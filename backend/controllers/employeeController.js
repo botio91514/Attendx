@@ -169,6 +169,14 @@ const updateEmployee = async (req, res, next) => {
 
     await employee.save();
 
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    await AuditLog.create({
+      action: 'EMPLOYEE_UPDATE',
+      performedBy: req.user._id,
+      details: `Updated profile for ${employee.name} (${employee.employeeId}). Changes: ${Object.keys(req.body).join(', ')}`
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -216,6 +224,14 @@ const deleteEmployee = async (req, res, next) => {
       LeaveBalance.deleteMany({ userId: id }),
       User.findByIdAndDelete(id),
     ]);
+
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    await AuditLog.create({
+      action: 'EMPLOYEE_DELETE',
+      performedBy: req.user._id,
+      details: `Permanently deleted employee: ${employee.name} (${employee.employeeId}) and all associated records.`
+    });
 
     res.status(200).json({
       success: true,

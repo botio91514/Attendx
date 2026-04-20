@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Clock, CalendarDays, User, LogOut, Sun, Moon,
   Users, Activity, FileText, ClipboardList, ChevronLeft, ChevronRight, Zap, UserPlus, Settings as SettingsIcon,
-  Calendar, Megaphone, CircleDollarSign, Palmtree, Coffee, CheckSquare, BarChart2
+  Calendar, Megaphone, CircleDollarSign, Palmtree, Coffee, CheckSquare, BarChart2, ShieldAlert
 } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 
@@ -32,6 +32,8 @@ const adminNav = [
   { label: 'Payroll', icon: CircleDollarSign, path: '/admin/payroll' },
   { label: 'Notice Board', icon: Megaphone, path: '/admin/announcements' },
   { label: 'Office Calendar', icon: Calendar, path: '/admin/holidays' },
+  { label: 'Audit Logs', icon: ShieldAlert, path: '/admin/audit' },
+  { label: 'System Corrections', icon: Zap, path: '/admin/corrections' },
   { label: 'My Profile', icon: User, path: '/profile' },
   { label: 'Office Settings', icon: SettingsIcon, path: '/admin/settings' },
 ];

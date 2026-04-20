@@ -23,6 +23,11 @@ const announcementSchema = new mongoose.Schema(
       enum: ['all', 'employee', 'admin'],
       default: 'all',
     },
+    category: {
+      type: String,
+      enum: ['general', 'policy', 'event', 'holiday', 'safety', 'critical'],
+      default: 'general',
+    },
     isActive: {
       type: Boolean,
       default: true,

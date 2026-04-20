@@ -145,10 +145,13 @@ const AttendancePage: React.FC = () => {
           {record || isSunday ? (
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5 z-10 w-fit">
               <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${isSunday && (!record || record.status === 'holiday') ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : record?.status === 'leave' ? 'bg-primary/40 text-primary-foreground shadow-sm' : 'bg-indigo-500/40 text-white'}`}>
-                {isSunday && (!record || record.status === 'holiday') ? 'Sunday' : 
-                 record?.status === 'holiday' ? record.title || 'Holiday' : 
-                 record?.status === 'leave' && record.leaveMeta ? (
-                   `${(record.leaveMeta.cl || 0) > 0 ? record.leaveMeta.cl + ' CL ' : ''}${(record.leaveMeta.sl || 0) > 0 ? record.leaveMeta.sl + ' SL ' : ''}${(record.leaveMeta.lwp || 0) > 0 ? record.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                  {(record?.leaveMeta && (record.leaveMeta.cl > 0 || record.leaveMeta.sl > 0 || record.leaveMeta.lwp > 0)) ? (
+                   <span className="flex flex-wrap gap-1">
+                     {record.status !== 'leave' && <span className="mr-1">{record.status}</span>}
+                     {record.leaveMeta.cl > 0 && ` + ${record.leaveMeta.cl} CL`}
+                     {record.leaveMeta.sl > 0 && ` + ${record.leaveMeta.sl} SL`}
+                     {record.leaveMeta.lwp > 0 && ` + ${record.leaveMeta.lwp} LWP`}
+                   </span>
                  ) : record?.status}
               </span>
               {record?.checkIn && (
@@ -208,7 +211,16 @@ const AttendancePage: React.FC = () => {
             </button>
           </div>
 
-          <button className="glow-button flex items-center justify-center gap-2 text-sm py-2 shrink-0">
+          <button 
+            onClick={() => {
+              const m = currentDate.getMonth() + 1;
+              const y = currentDate.getFullYear();
+              const from = `${y}-${String(m).padStart(2, '0')}-01`;
+              const to = new Date(y, m, 0).toISOString().split('T')[0];
+              window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/export/attendance/all/csv?from=${from}&to=${to}`, '_blank');
+            }}
+            className="glow-button flex items-center justify-center gap-2 text-sm py-2 shrink-0"
+          >
             <Download className="w-4 h-4" /> <span className="hidden sm:inline">CSV</span>
           </button>
         </div>
@@ -300,8 +312,13 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
                       <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{
-                        row.status === 'leave' && row.leaveMeta ? (
-                          `${(row.leaveMeta.cl || 0) > 0 ? row.leaveMeta.cl + ' CL ' : ''}${(row.leaveMeta.sl || 0) > 0 ? row.leaveMeta.sl + ' SL ' : ''}${(row.leaveMeta.lwp || 0) > 0 ? row.leaveMeta.lwp + ' LWP' : ''}`.trim() || 'Leave'
+                        (row.leaveMeta && (row.leaveMeta.cl > 0 || row.leaveMeta.sl > 0 || row.leaveMeta.lwp > 0)) ? (
+                          <span className="flex flex-wrap gap-1">
+                            {row.status !== 'leave' && <span className="mr-1">{row.status}</span>}
+                            {row.leaveMeta.cl > 0 && `${row.leaveMeta.cl} CL`}
+                            {row.leaveMeta.sl > 0 && `${row.leaveMeta.sl} SL`}
+                            {row.leaveMeta.lwp > 0 && `${row.leaveMeta.lwp} LWP`}
+                          </span>
                         ) : row.status
                       }</span></td>
                     </tr>

@@ -70,6 +70,16 @@ const updateSettings = async (req, res, next) => {
     settings.updatedBy = req.user._id;
 
     await settings.save();
+    
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    if (changes.length > 0) {
+      await AuditLog.create({
+        action: 'SETTINGS_UPDATE',
+        performedBy: req.user._id,
+        details: `Updated office configuration. Changes: ${changes.map(c => c.type).join(', ')}`
+      });
+    }
 
     res.status(200).json({
       success: true,

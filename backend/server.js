@@ -138,6 +138,8 @@ app.use('/api/profile', require('./routes/profileRoutes'));
 app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/tasks', taskRoutes)
 app.use('/api/export', require('./routes/exportRoutes.js'));
+app.use('/api/audit', require('./routes/auditLog'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Root route
 app.get('/', (req, res) => {

@@ -72,6 +72,10 @@ const attendanceSchema = new mongoose.Schema(
       sl: { type: Number, default: 0 },
       rl: { type: Number, default: 0 },
       lwp: { type: Number, default: 0 }
+    },
+    isManualOverride: {
+      type: Boolean,
+      default: false
     }
   },
   {
@@ -102,8 +106,8 @@ attendanceSchema.methods.calculateWorkingHours = function () {
 
 // Method to determine status based on check-in time and working hours
 attendanceSchema.methods.determineStatus = function (settings = null) {
-  // If manual override for leave or holiday, keep it
-  if (['leave', 'holiday'].includes(this.status)) {
+  // If manual override for leave or holiday, or persistently flagged as manual, keep it
+  if (['leave', 'holiday'].includes(this.status) || this.isManualOverride || this._isManualStatus) {
     return this.status;
   }
 

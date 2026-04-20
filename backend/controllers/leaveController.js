@@ -367,6 +367,14 @@ const cancelLeave = async (req, res, next) => {
 
     leave.status = 'cancelled';
     await leave.save();
+
+    // --- AUDIT LOG (ADDED) ---
+    await AuditLog.create({
+      action: 'LEAVE_CANCEL',
+      performedBy: req.user._id,
+      details: `Cancelled ${leave.leaveType} leave request for ${req.user.name}. Status was ${leave.status}.`
+    });
+
     res.status(200).json({ success: true, message: 'Leave request cancelled and balance restored' });
   } catch (error) { next(error); }
 };

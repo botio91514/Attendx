@@ -28,6 +28,8 @@ import AdminBreakHistory from "@/pages/admin/BreakHistory";
 import { TasksPage } from "@/pages/employee/TasksPage";
 import { AdminTasksPage } from "@/pages/admin/AdminTasksPage";
 import { EmployeeActivityPage } from "@/pages/admin/EmployeeActivityPage";
+import AuditLogs from "@/pages/admin/AuditLogs";
+import SystemCorrections from "@/pages/admin/SystemCorrections";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2 } from "lucide-react";
@@ -90,6 +92,8 @@ const AppWithAuth = () => {
               <Route path="/admin/register" element={<RegisterEmployee />} />
               <Route path="/admin/tasks" element={<AdminTasksPage />} />
               <Route path="/admin/employee/:employeeId/activity" element={<EmployeeActivityPage />} />
+              <Route path="/admin/audit" element={<AuditLogs />} />
+              <Route path="/admin/corrections" element={<SystemCorrections />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

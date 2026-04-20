@@ -41,13 +41,14 @@ const getAnnouncements = async (req, res, next) => {
  */
 const createAnnouncement = async (req, res, next) => {
   try {
-    const { title, content, priority, targetRole, expiresAt } = req.body;
+    const { title, content, priority, targetRole, category, expiresAt } = req.body;
 
     const announcement = await Announcement.create({
       title,
       content,
       priority: priority || 'medium',
       targetRole: targetRole || 'all',
+      category: category || 'general',
       expiresAt: expiresAt || null,
       createdBy: req.user._id,
     });

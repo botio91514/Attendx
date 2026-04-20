@@ -293,6 +293,13 @@ const processPayroll = async (req, res, next) => {
 
     await Payroll.bulkWrite(ops);
 
+    // --- AUDIT LOG (ADDED) ---
+    await AuditLog.create({
+      action: 'PAYROLL_FINALIZE',
+      performedBy: req.user._id,
+      details: `Finalized and locked payroll for ${month}/${year}. Records created for ${payrollRecords.length} staff.`
+    });
+
     res.status(200).json({
       success: true,
       message: `Payroll for ${month}/${year} has been finalized and locked.`
@@ -317,7 +324,7 @@ const updatePayroll = async (req, res, next) => {
     }
 
     if (bonus !== undefined) payroll.bonus = bonus;
-    if (deductions !== undefined) payroll.deductions = deductions;
+    if (deductions !== undefined) payroll.deductionAmount = deductions;
     if (notes !== undefined) payroll.notes = notes;
     if (status) payroll.status = status;
     if (transactionId) payroll.transactionId = transactionId;
@@ -327,10 +334,17 @@ const updatePayroll = async (req, res, next) => {
       payroll.paidAt = new Date();
     }
 
-    // Recalculate net
-    payroll.netSalary = (payroll.grossSalary + (payroll.bonus || 0)) - (payroll.deductions || 0);
+    // Recalculate net: (Gross + Bonus) - Deductions
+    payroll.netSalary = Math.round((payroll.grossAmount + (payroll.bonus || 0)) - (payroll.deductionAmount || 0));
     
     await payroll.save();
+
+    // --- AUDIT LOG (ADDED) ---
+    await AuditLog.create({
+      action: 'PAYROLL_UPDATE',
+      performedBy: req.user._id,
+      details: `Updated payroll for ${payroll.userId.name} (${payroll.month}/${payroll.year}). Status: ${status || payroll.status}, Bonus: ${bonus || 0}, Net: ${payroll.netSalary}`
+    });
 
     // Notify employee if marked as paid
     if (status === 'paid' && payroll.userId?.email) {
@@ -419,6 +433,13 @@ const bulkPay = async (req, res, next) => {
         });
       }
     })).catch(err => console.error('Bulk email error:', err));
+
+    // --- AUDIT LOG (ADDED) ---
+    await AuditLog.create({
+      action: 'PAYROLL_BULK_PAY',
+      performedBy: req.user._id,
+      details: `Marked ${ids.length} payroll records as PAID for ${records[0]?.month}/${records[0]?.year}.`
+    });
 
     res.status(200).json({
       success: true,

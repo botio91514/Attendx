@@ -354,6 +354,39 @@ const startBreak = async (req, res, next) => {
     attendance._settings = settings;
     await attendance.save();
 
+    // ── Auto-pause running tasks on break start ──────────────
+    try {
+      const Task = require("../models/Task");
+      const WorkSession = require("../models/WorkSession");
+
+      const activeTasks = await Task.find({
+        assignedTo: req.user._id,
+        status: "in-progress"
+      });
+
+      for (const task of activeTasks) {
+        const session = await WorkSession.findOne({
+          taskId: task._id,
+          endTime: null
+        });
+        if (session) {
+          session.endTime = new Date();
+          session.duration = Math.floor((session.endTime - session.startTime) / 1000);
+          await session.save();
+          // Use findByIdAndUpdate to bypass validation for older tasks
+          await Task.findByIdAndUpdate(task._id, {
+            $inc: { totalTime: session.duration },
+            $set: { status: "paused" }
+          });
+        } else {
+          await Task.findByIdAndUpdate(task._id, { $set: { status: "paused" } });
+        }
+      }
+    } catch (taskErr) {
+      console.error("Task auto-pause error on break start:", taskErr);
+    }
+    // ─────────────────────────────────────────────────────
+
     res.status(200).json({
       success: true,
       data: {
@@ -413,6 +446,32 @@ const endBreak = async (req, res, next) => {
     attendance._settings = settings;
     await attendance.save();
 
+    // ── Auto-resume tasks on break end ──────────────
+    try {
+      const Task = require("../models/Task");
+      const WorkSession = require("../models/WorkSession");
+
+      // Resume the most recently paused task for this user
+      const lastPausedTask = await Task.findOne({
+        assignedTo: req.user._id,
+        status: "paused"
+      }).sort({ updatedAt: -1 });
+
+      if (lastPausedTask) {
+        // Create a new work session for the resumed task
+        await WorkSession.create({
+          taskId: lastPausedTask._id,
+          userId: req.user._id,
+          startTime: new Date()
+        });
+
+        await Task.findByIdAndUpdate(lastPausedTask._id, { $set: { status: "in-progress" } });
+      }
+    } catch (taskErr) {
+      console.error("Task auto-resume error on break end:", taskErr);
+    }
+    // ─────────────────────────────────────────────────────
+
     res.status(200).json({
       success: true,
       data: {
@@ -439,7 +498,40 @@ const getTodayAttendance = async (req, res, next) => {
     const attendance = await Attendance.findOne({ userId, date: today });
 
     if (!attendance) {
-      // 🏆 Check if actually on Leave today
+      // 🏆 Check if today is a Holiday
+      const Holiday = require('../models/Holiday');
+      const holiday = await Holiday.findOne({ 
+        date: { 
+          $gte: new Date(today + 'T00:00:00.000Z'), 
+          $lte: new Date(today + 'T23:59:59.999Z') 
+        } 
+      });
+
+      if (holiday) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            attendance: { status: 'holiday', title: holiday.title },
+            message: `Today is a public holiday: ${holiday.title}`,
+          },
+          message: 'Public Holiday',
+        });
+      }
+
+      // 🏆 Check if today is Sunday
+      const isSunday = new Date(today).getDay() === 0;
+      if (isSunday) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            attendance: { status: 'holiday', title: 'Sunday (Weekly Off)' },
+            message: 'Today is Sunday, your weekly off.',
+          },
+          message: 'Weekly Off',
+        });
+      }
+
+      // 🏆 Check if actually on Approved Leave today
       const Leave = require('../models/Leave');
       const onLeave = await Leave.findOne({
         userId,
@@ -451,7 +543,7 @@ const getTodayAttendance = async (req, res, next) => {
       return res.status(200).json({
         success: true,
         data: {
-          attendance: onLeave ? { status: 'on-leave', leaveType: onLeave.leaveType } : null,
+          attendance: onLeave ? { status: 'leave', leaveType: onLeave.leaveType } : null,
           message: onLeave ? `You are on ${onLeave.leaveType} leave today` : 'No attendance record for today',
         },
         message: onLeave ? 'On Leave' : 'No record found',

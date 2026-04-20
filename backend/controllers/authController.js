@@ -53,6 +53,14 @@ const register = async (req, res, next) => {
       ...(employeeId && { employeeId }),
     });
 
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    await AuditLog.create({
+      action: 'EMPLOYEE_REGISTER',
+      performedBy: req.user._id,
+      details: `Registered new employee: ${user.name} (${user.employeeId})`
+    });
+
     // --- EMAIL NOTIFICATION (ADDED) ---
     const loginUrl = (process.env.CLIENT_URL || 'http://localhost:5173') + '/login';
     sendEmail({

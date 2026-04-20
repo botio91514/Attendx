@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Megaphone, Plus, Trash2, Loader2, Search, Info, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Megaphone, Plus, Trash2, Loader2, Search, Info, AlertCircle, ShieldAlert, FileText, Calendar, ShieldCheck, Flame, Palmtree, Eye } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -17,7 +17,8 @@ const Announcements: React.FC = () => {
     title: '',
     content: '',
     priority: 'medium',
-    targetRole: 'all'
+    targetRole: 'all',
+    category: 'general'
   });
 
   // Deletion State
@@ -50,7 +51,7 @@ const Announcements: React.FC = () => {
       if (res.success) {
         toast.success('Announcement posted successfully');
         setShowAddForm(false);
-        setNewNotice({ title: '', content: '', priority: 'medium', targetRole: 'all' });
+        setNewNotice({ title: '', content: '', priority: 'medium', targetRole: 'all', category: 'general' });
         fetchAnnouncements();
       }
     } catch (error: any) {
@@ -89,6 +90,28 @@ const Announcements: React.FC = () => {
     }
   };
 
+  const getCategoryIcon = (cat: string) => {
+    switch(cat) {
+      case 'policy': return <FileText className="w-4 h-4" />;
+      case 'event': return <Calendar className="w-4 h-4" />;
+      case 'holiday': return <Palmtree className="w-4 h-4" />;
+      case 'safety': return <ShieldCheck className="w-4 h-4" />;
+      case 'critical': return <Flame className="w-4 h-4" />;
+      default: return <Megaphone className="w-4 h-4" />;
+    }
+  };
+
+  const getCategoryColor = (cat: string) => {
+    switch(cat) {
+      case 'policy': return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
+      case 'event': return 'text-purple-500 bg-purple-500/10 border-purple-500/20';
+      case 'holiday': return 'text-green-500 bg-green-500/10 border-green-500/20';
+      case 'safety': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+      case 'critical': return 'text-rose-500 bg-rose-500/10 border-rose-500/20';
+      default: return 'text-primary bg-primary/10 border-primary/20';
+    }
+  };
+
   const filtered = announcements.filter(a => 
     a.title.toLowerCase().includes(search.toLowerCase()) ||
     a.content.toLowerCase().includes(search.toLowerCase())
@@ -116,7 +139,7 @@ const Announcements: React.FC = () => {
         {showAddForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowAddForm(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative glass-card w-full max-w-lg p-6 sm:p-8">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative glass-card w-full max-w-lg p-6 sm:p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
               <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
                 <Megaphone className="text-primary w-6 h-6" /> New Announcement
               </h3>
@@ -125,14 +148,27 @@ const Announcements: React.FC = () => {
                   <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Notice Title</label>
                   <input required type="text" value={newNotice.title} onChange={e => setNewNotice({...newNotice, title: e.target.value})} className="input-floating" placeholder="e.g. Office Closure Next Friday" />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Priority</label>
-                  <select value={newNotice.priority} onChange={e => setNewNotice({...newNotice, priority: e.target.value})} className="input-floating bg-card">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Priority</label>
+                    <select value={newNotice.priority} onChange={e => setNewNotice({...newNotice, priority: e.target.value})} className="input-floating bg-card">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Category</label>
+                    <select value={newNotice.category} onChange={e => setNewNotice({...newNotice, category: e.target.value})} className="input-floating bg-card">
+                      <option value="general">General</option>
+                      <option value="policy">Policy</option>
+                      <option value="event">Event</option>
+                      <option value="holiday">Holiday</option>
+                      <option value="safety">Safety</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Target Audience</label>
@@ -175,7 +211,6 @@ const Announcements: React.FC = () => {
           ) : (
             filtered.map(notice => (
               <div key={notice._id} className="glass-card p-6 flex flex-col md:flex-row gap-6 relative overflow-hidden group">
-                 {/* Priority indicator bar */}
                  <div className={`absolute top-0 left-0 bottom-0 w-1 ${
                    notice.priority === 'urgent' ? 'bg-destructive' :
                    notice.priority === 'high' ? 'bg-warning' :
@@ -183,15 +218,18 @@ const Announcements: React.FC = () => {
                  }`} />
 
                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-3 mb-2">
-                       <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${getPriorityColor(notice.priority)}`}>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                       <span className={`flex items-center gap-1.5 text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border ${getCategoryColor(notice.category)}`}>
+                          {getCategoryIcon(notice.category)} {notice.category || 'general'}
+                       </span>
+                       <span className={`text-[10px] uppercase font-bold px-2.5 py-1 rounded-full border ${getPriorityColor(notice.priority)}`}>
                           {notice.priority}
                        </span>
-                       <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-secondary/50 text-muted-foreground border border-glass-border">
-                          For: {notice.targetRole}
+                       <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full bg-secondary/50 text-muted-foreground border border-glass-border">
+                          Audience: {notice.targetRole}
                        </span>
-                       <span className="text-xs text-muted-foreground italic">
-                          {new Date(notice.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                       <span className="text-xs text-muted-foreground ml-auto">
+                          {new Date(notice.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                        </span>
                     </div>
                     <h3 className="text-lg font-bold text-foreground mb-2">{notice.title}</h3>

@@ -409,18 +409,24 @@ const startAutoCheckoutJob = () => {
       const results = await Promise.allSettled(
         pendingRecords.map(async (record) => {
           // 🏆 Construct the correct UTC date from IST office end time
-          // If officeEndTime is 18:30 (IST), we want a UTC Date where (UTC Time + 5.5h) = 18:30
           const [endH, endM] = (settings.officeEndTime || '18:15').split(':').map(Number);
-          
           const now = new Date();
           const istOffset = 5.5 * 60 * 60 * 1000;
-          
-          // 1. Get today's date in IST
           const istDate = new Date(now.getTime() + istOffset);
-          // 2. Set the desired IST clock time on this IST day (using UTC methods on the offsetted date)
           istDate.setUTCHours(endH, endM, 0, 0);
-          // 3. Convert back to absolute UTC by subtracting the offset
           const checkoutDate = new Date(istDate.getTime() - istOffset);
+
+          // --- AUTO-END ONGOING BREAK (ADDED) ---
+          const ongoingBreakIndex = record.breaks.findIndex(b => !b.breakEnd);
+          if (ongoingBreakIndex !== -1) {
+             const breakStart = record.breaks[ongoingBreakIndex].breakStart;
+             record.breaks[ongoingBreakIndex].breakEnd = checkoutDate;
+             record.breaks[ongoingBreakIndex].duration = Math.max(
+               0,
+               Math.floor((checkoutDate - new Date(breakStart)) / (1000 * 60))
+             );
+          }
+          // -------------------------------------
 
           // Update record
           record.checkOut = checkoutDate;

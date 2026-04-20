@@ -158,6 +158,17 @@ const LeaveRequests: React.FC = () => {
                   <p className="text-sm font-medium text-foreground">{leave.userId?.name || 'Unknown'}</p>
                   <p className="text-xs text-muted-foreground line-clamp-1">{leave.reason}</p>
                 </div>
+                {leave.attachment && (
+                  <a 
+                    href={leave.attachment} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="p-2 rounded-lg bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                    title="View Medical Certificate"
+                  >
+                    <FileText className="w-4 h-4" />
+                  </a>
+                )}
               </div>
               <span className="status-leave text-xs">{leave.leaveType}</span>
               <div className="flex flex-col items-end gap-1 px-4 border-l border-glass-border">

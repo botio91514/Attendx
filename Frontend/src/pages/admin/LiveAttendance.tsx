@@ -122,7 +122,14 @@ const LiveAttendance: React.FC = () => {
           <button onClick={fetchLiveAttendance} className="nav-item p-2" disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button className="glow-button flex items-center gap-2 text-sm py-2"><Download className="w-4 h-4" /> Export</button>
+          <button 
+            onClick={() => {
+              window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/export/attendance/all/csv?from=${selectedDate}&to=${selectedDate}`, '_blank');
+            }}
+            className="glow-button flex items-center gap-2 text-sm py-2"
+          >
+            <Download className="w-4 h-4" /> Export
+          </button>
         </div>
       </motion.div>
 

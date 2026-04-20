@@ -49,6 +49,14 @@ const createHoliday = async (req, res, next) => {
       createdBy: req.user._id,
     });
 
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    await AuditLog.create({
+      action: 'HOLIDAY_CREATE',
+      performedBy: req.user._id,
+      details: `Created holiday: ${title} on ${new Date(date).toLocaleDateString()}`
+    });
+
     res.status(201).json({
       success: true,
       data: holiday,
@@ -105,6 +113,14 @@ const deleteHoliday = async (req, res, next) => {
     }
 
     await holiday.deleteOne();
+
+    // --- AUDIT LOG (ADDED) ---
+    const AuditLog = require('../models/AuditLog');
+    await AuditLog.create({
+      action: 'HOLIDAY_DELETE',
+      performedBy: req.user._id,
+      details: `Deleted holiday: ${holiday.title} (${new Date(holiday.date).toLocaleDateString()})`
+    });
 
     res.status(200).json({
       success: true,
