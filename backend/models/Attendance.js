@@ -118,7 +118,7 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
 
   // Get dynamic settings or use defaults
   const startTimeStr = settings?.officeStartTime || '09:15';
-  const graceMinutes = settings?.lateGracePeriod || 0;
+  const graceMinutes = Number(settings?.lateGracePeriod || 0);
   const halfDayHours = settings?.halfDayThreshold || 5;
 
   const [startHour, startMinute] = startTimeStr.split(':').map(Number);
@@ -139,7 +139,7 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
   const { getISTMinutesFromMidnight } = require('../utils/timeUtils');
   
   const currentTotalMin = getISTMinutesFromMidnight(this.checkIn);
-  const thresholdTotalMin = startHour * 60 + startMinute + graceMinutes;
+  const thresholdTotalMin = (startHour * 60) + startMinute + graceMinutes;
 
   if (currentTotalMin > thresholdTotalMin) {
     return 'late';

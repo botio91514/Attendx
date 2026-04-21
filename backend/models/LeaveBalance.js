@@ -46,7 +46,7 @@ leaveBalanceSchema.methods.getAccrualSummary = function (joiningDate) {
   }
 
   const clAccrued = Math.min(12, monthsWorked * 1);
-  const slAccrued = Math.min(6, monthsWorked * 0.5);
+  const slAccrued = 6;
   const rlQuota = 2;
 
   return {
@@ -63,14 +63,14 @@ leaveBalanceSchema.methods.getAccrualSummary = function (joiningDate) {
       accrued: slAccrued,
       used: this.sick.used,
       available: Math.max(0, slAccrued - this.sick.used),
-      monthlyLimit: 0.5
+      monthlyLimit: 6
     },
     religious: {
       total: 2,
       accrued: rlQuota,
       used: this.religious.used,
       available: Math.max(0, rlQuota - this.religious.used),
-      monthlyLimit: 2 // Assuming no strict monthly limit for RL, or just keeping the quota
+      monthlyLimit: 2 
     },
     unpaid: {
       total: 'Unlimited',

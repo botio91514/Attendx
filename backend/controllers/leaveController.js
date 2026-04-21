@@ -8,11 +8,9 @@ const Holiday = require('../models/Holiday');
 const Payroll = require('../models/Payroll');
 const AuditLog = require('../models/AuditLog');
 const {
-  getLeaveBreakdown,
   getCurrentYear,
-  dateRangesOverlap,
-  calculateAccrualBalance,
-  distributeLeave
+  distributeLeave,
+  getDatesBetween
 } = require('../utils/leaveHelpers');
 const { sendEmail } = require('../utils/emailService');
 const { 
@@ -77,22 +75,15 @@ const applyLeave = async (req, res, next) => {
     const currentYear = new Date(startDate).getFullYear().toString();
 
     const monthlyUsed = {};
-    monthsInvolved.forEach(m => monthlyUsed[m] = { cl: 0, sl: 0 });
-    let yearlyRLUsed = 0;
+    monthsInvolved.forEach(m => monthlyUsed[m] = { cl: 0 });
 
     existingLeaves.forEach(lv => {
       (lv.dailyBreakdown || []).forEach(day => {
         const monthKey = day.date.slice(0, 7);
-        const yearKey = day.date.slice(0, 4);
 
         if (monthlyUsed[monthKey]) {
           const dayVal = day.days || (lv.isHalfDay ? 0.5 : 1);
           if (day.leaveType === 'cl') monthlyUsed[monthKey].cl += dayVal;
-          if (day.leaveType === 'sl') monthlyUsed[monthKey].sl += dayVal;
-        }
-
-        if (yearKey === currentYear && day.leaveType === 'rl') {
-           yearlyRLUsed += (day.days || (lv.isHalfDay ? 0.5 : 1));
         }
       });
     });
@@ -101,8 +92,29 @@ const applyLeave = async (req, res, next) => {
     const typeKeyMap = { casual: 'cl', sick: 'sl', religious: 'rl', unpaid: 'lwp' };
     const internalKey = typeKeyMap[selectedType] || 'lwp';
 
+    // 🛡️ SICK LEAVE VALIDATION: Only full days (1.0)
+    if (internalKey === 'sl' && isHalfDay) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sick Leave (SL) can only be taken as full days. No half-day SL allowed.'
+      });
+    }
+
     const totalDaysValue = isHalfDay ? 0.5 : allDates.length;
-    const breakdown = distributeLeave(allDates, internalKey, monthlyUsed, yearlyRLUsed, isHalfDay);
+    const yearlyUsed = { sl: 0, rl: 0 };
+    
+    // Recalculate yearly sl and rl usage
+    existingLeaves.forEach(lv => {
+      (lv.dailyBreakdown || []).forEach(day => {
+        const yearKey = day.date.slice(0, 4);
+        if (yearKey === currentYear) {
+          if (day.leaveType === 'sl') yearlyUsed.sl += (day.days || 1);
+          if (day.leaveType === 'rl') yearlyUsed.rl += (day.days || 1);
+        }
+      });
+    });
+
+    const breakdown = distributeLeave(allDates, internalKey, monthlyUsed, yearlyUsed, isHalfDay);
 
     if (breakdown.sl > 2 && !req.body.attachment) {
       return res.status(400).json({
@@ -110,6 +122,13 @@ const applyLeave = async (req, res, next) => {
         message: 'Medical certificate attachment is required for sick leave exceeding 2 days.'
       });
     }
+
+    const yearBreakdown = {};
+    breakdown.dailyBreakdown.forEach(day => {
+      const year = day.date.slice(0, 4);
+      if (!yearBreakdown[year]) yearBreakdown[year] = [];
+      yearBreakdown[year].push(day.date);
+    });
 
     // 5. Create Leave Record
     const leave = await Leave.create({
@@ -123,6 +142,7 @@ const applyLeave = async (req, res, next) => {
       rlDays: breakdown.rl,
       lwpDays: breakdown.lwp,
       dailyBreakdown: breakdown.dailyBreakdown,
+      yearBreakdown,
       reason,
       attachment: req.body.attachment || null,
       isHalfDay,

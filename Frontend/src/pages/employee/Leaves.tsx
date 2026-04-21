@@ -50,7 +50,7 @@ const LeavesPage: React.FC = () => {
         const b = balanceRes.data.balance;
         const balanceArray = [
           { type: 'Casual', id: 'casual', total: b.casual?.total ?? 12, accrued: b.casual?.accrued ?? 0, remaining: b.casual?.available ?? 0, used: b.casual?.used ?? 0, monthlyLimit: b.casual?.monthlyLimit ?? 1, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
-          { type: 'Sick', id: 'sick', total: b.sick?.total ?? 6, accrued: b.sick?.accrued ?? 0, remaining: b.sick?.available ?? 0, used: b.sick?.used ?? 0, monthlyLimit: b.sick?.monthlyLimit ?? 0.5, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
+          { type: 'Sick', id: 'sick', total: b.sick?.total ?? 6, accrued: b.sick?.accrued ?? 0, remaining: b.sick?.available ?? 0, used: b.sick?.used ?? 0, monthlyLimit: 6, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
           { type: 'Religious', id: 'religious', total: b.religious?.total ?? 2, accrued: b.religious?.accrued ?? 0, remaining: b.religious?.available ?? 0, used: b.religious?.used ?? 0, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
           { type: 'LWP', id: 'unpaid', total: 'Unlimited', accrued: '∞', remaining: '∞', used: b.unpaid?.used ?? 0, icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
         ];
@@ -290,7 +290,7 @@ const LeavesPage: React.FC = () => {
                <Calendar className="w-8 h-8 mb-4 opacity-80" />
                <h4 className="text-lg font-bold mb-2 font-display">Strict Leave Policy</h4>
                <p className="text-xs opacity-70 leading-relaxed mb-6">
-                 Limits: **1.0 Casual Leave** & **0.5 Sick Leave** per month. Excess days are automatically converted to LWP.
+                 Limits: **1.0 Casual Leave** per month & **6.0 Sick Leave** per year. Excess days are automatically converted to LWP.
                </p>
                <div className="space-y-3">
                   <div className="flex justify-between items-center text-[10px] font-bold uppercase border-t border-white/10 pt-3">
@@ -389,7 +389,7 @@ const LeavesPage: React.FC = () => {
 
                         // Project distribution based on Strict Policy
                         const balanceObj = balances.find(b => b.id === (formData.type === 'unpaid' ? 'unpaid' : formData.type));
-                        const monthlyLimit = balanceObj?.monthlyLimit || (formData.type === 'casual' ? 1 : formData.type === 'sick' ? 0.5 : 99);
+                        const monthlyLimit = balanceObj?.monthlyLimit || (formData.type === 'casual' ? 1 : formData.type === 'sick' ? 6 : 99);
                         const yearlyRemaining = Number(balanceObj?.remaining || 0);
 
                         let paid = 0;

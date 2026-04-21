@@ -63,9 +63,9 @@ const checkIn = async (req, res, next) => {
     const currentTotalMin = getISTMinutesFromMidnight(now);
     
     const [startH, startM] = (settings?.officeStartTime || '09:15').split(':').map(Number);
-    const grace = settings?.lateGracePeriod || 0;
+    const grace = Number(settings?.lateGracePeriod || 0);
     
-    const thresholdTotalMin = startH * 60 + startM + grace;
+    const thresholdTotalMin = (startH * 60) + startM + grace;
     
     const computedStatus = currentTotalMin > thresholdTotalMin ? 'late' : 'present';
 
@@ -85,6 +85,11 @@ const checkIn = async (req, res, next) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    // Format the threshold time for the message
+    const thresholdDate = new Date(now);
+    thresholdDate.setHours(startH, startM + grace, 0, 0);
+    const thresholdTimeStr = thresholdDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
     res.status(200).json({
       success: true,
       data: {
@@ -95,7 +100,7 @@ const checkIn = async (req, res, next) => {
           status: attendance.status,
           message:
             attendance.status === 'late'
-              ? `You checked in late (after ${settings.officeStartTime})`
+              ? `You checked in late (Threshold was ${thresholdTimeStr})`
               : 'Check-in successful',
         },
       },

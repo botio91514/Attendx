@@ -18,7 +18,7 @@ const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl:
   }
 
   const clAccrued = Math.min(12, monthsWorked * 1);
-  const slAccrued = Math.min(6, monthsWorked * 0.5);
+  const slAccrued = 6; // SL is 6 per year, not pro-rated monthly with 0.5
   const rlQuota = 2;
 
   return {
@@ -32,40 +32,37 @@ const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl:
 /**
  * Distribute requested leave dates strictly against monthly and yearly limits
  * CL: Max 1/month (Strict, full LWP if exceeded per day)
- * SL: Max 0.5/month (Partial allowed: 0.5 SL + rest LWP)
+ * SL: Max 6/year (Strict, full LWP if exceeded per day, only 1.0 allowed)
  * RL: Max 2/year (Strict, full LWP if exceeded per day)
  */
-const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 0, isHalfDay = false) => {
+const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = { sl: 0, rl: 0 }, isHalfDay = false) => {
   const breakdown = { cl: 0, sl: 0, rl: 0, lwp: 0, dailyBreakdown: [] };
   const dayIncrement = isHalfDay ? 0.5 : 1;
-  const MONTHLY_LIMITS = { cl: 1, sl: 0.5 };
-  const YEARLY_LIMIT = 2; // for RL
+  const MONTHLY_LIMITS = { cl: 1 };
+  const YEARLY_LIMITS = { sl: 6, rl: 2 };
 
   // Sort dates chronologically
   const sortedDates = [...allDates].sort();
 
   sortedDates.forEach(date => {
     const monthKey = date.slice(0, 7); // "YYYY-MM"
-    if (!monthlyUsed[monthKey]) monthlyUsed[monthKey] = { cl: 0, sl: 0 };
+    if (!monthlyUsed[monthKey]) monthlyUsed[monthKey] = { cl: 0 };
     
     let remainingToDistribute = dayIncrement;
 
     if (selectedType === 'sl') {
-      // SL Partial Logic: Use whatever is left of the 0.5 monthly quota, then rest is LWP
-      const availableSL = Math.max(0, MONTHLY_LIMITS.sl - (monthlyUsed[monthKey].sl || 0));
-      const slToTake = Math.min(availableSL, remainingToDistribute);
-      
-      if (slToTake > 0) {
-        breakdown.sl += slToTake;
-        monthlyUsed[monthKey].sl += slToTake;
-        remainingToDistribute -= slToTake;
-        breakdown.dailyBreakdown.push({ date, leaveType: 'sl', days: slToTake });
-      }
-      
-      if (remainingToDistribute > 0) {
+      // SL Strict Logic: Full day only and within yearly limit
+      if (isHalfDay) {
+        // Should be caught by validation, but safeguard here
         breakdown.lwp += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
-        remainingToDistribute = 0;
+      } else if ((yearlyUsed.sl || 0) + remainingToDistribute <= YEARLY_LIMITS.sl) {
+        breakdown.sl += remainingToDistribute;
+        yearlyUsed.sl += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'sl', days: remainingToDistribute });
+      } else {
+        breakdown.lwp += remainingToDistribute;
+        breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else if (selectedType === 'cl') {
       // CL Strict Logic: If the day's increment exceeds the 1.0 limit, the WHOLE day's increment is LWP
@@ -79,9 +76,9 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
       }
     } else if (selectedType === 'rl') {
       // RL Strict Logic: 2 per year
-      if ((yearlyUsed || 0) + remainingToDistribute <= YEARLY_LIMIT) {
+      if ((yearlyUsed.rl || 0) + remainingToDistribute <= YEARLY_LIMITS.rl) {
         breakdown.rl += remainingToDistribute;
-        yearlyUsed += remainingToDistribute;
+        yearlyUsed.rl += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'rl', days: remainingToDistribute });
       } else {
         breakdown.lwp += remainingToDistribute;
