@@ -181,9 +181,8 @@ const getPayrollSummary = async (req, res, next) => {
       // 🛡️ FINANCIAL AUDIT FIX: High precision daily rate (no rounding yet)
       const dailyRate = totalWorkingDaysInMonth > 0 ? emp.baseSalary / totalWorkingDaysInMonth : 0;
       
-      // Payable days = Present + Half-day*0.5 + Unique Approved Paid Leaves
-      const attendancePayable = p + (h * 0.5);
-      const payableDays = attendancePayable + leaveDaysCount;
+      // Payable days = Accumulated work/leave credit (clamped to max working days later)
+      const payableDays = attendance_payable + leaveDaysCount;
       
       // 🛡️ FINANCIAL AUDIT FIX: Pay ONLY for worked or approved leave days
       const grossAmount = payableDays * dailyRate;
@@ -575,8 +574,8 @@ const getMyPayroll = async (req, res, next) => {
 
     const leaveDaysCount = paidLeaveDaysInMonth;
     const dailyRate = totalWorkingDaysInMonth > 0 ? req.user.baseSalary / totalWorkingDaysInMonth : 0;
-    const attendancePayable = p + (h * 0.5);
-    const payableDays = attendancePayable + leaveDaysCount;
+    // 🛡️ FINANCIAL AUDIT FIX: Use accumulated attendance_payable to handle partial overlaps correctly
+    const payableDays = attendance_payable + leaveDaysCount;
 
     // 🛡️ FINANCIAL AUDIT FIX: Pay ONLY for worked or approved leave days
     const grossAmount = payableDays * dailyRate;
