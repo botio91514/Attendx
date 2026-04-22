@@ -180,7 +180,7 @@ const Reports: React.FC = () => {
           {record && (
             <div className="mt-auto flex flex-col gap-1 z-10 relative">
               <span className={getStatusBadge(record.status)}>{record.status}</span>
-              {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {new Date(record.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+              {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {new Date(record.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}</span>}
             </div>
           )}
         </div>
@@ -328,8 +328,8 @@ const Reports: React.FC = () => {
                         </td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.date}</td>
                         <td className="px-5 py-4 text-xs text-muted-foreground font-medium">{new Date(row.date).toLocaleDateString([], { weekday: 'long' })}</td>
-                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? new Date(row.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
-                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? new Date(row.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
+                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? new Date(row.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</td>
+                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? new Date(row.checkOut).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-5 py-4"><span className={getStatusBadge(row.status)}>{row.status}</span></td>
                         <td className="px-5 py-4 text-right">

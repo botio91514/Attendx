@@ -16,7 +16,8 @@ const Holiday = require('../models/Holiday');
 const LeaveBalance = require('../models/LeaveBalance');
 const Payroll = require('../models/Payroll');
 const Settings = require('../models/Settings');
-const { getMonthRange } = require('../utils/attendanceHelpers');
+const { getMonthRange, calculateStats } = require('../utils/attendanceHelpers');
+const { processComprehensiveAttendance } = require('./attendanceController');
 
 // Helper: get date range from query params
 const getDateRange = (query) => {
@@ -42,11 +43,9 @@ const exportAttendancePDF = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    // Fetch attendance records for date range
-    const records = await Attendance.find({
-      userId: employeeId,
-      date: { $gte: dateRange.from, $lte: dateRange.to }
-    }).sort({ date: 1 });
+    // Fetch comprehensive records for the single employee
+    const settings = await Settings.getSettings();
+    const records = await processComprehensiveAttendance(dateRange.from, dateRange.to, [employee], settings);
 
     await generateAttendancePDF(res, employee, records, dateRange);
   } catch (err) {
@@ -62,17 +61,14 @@ const exportAllAttendancePDF = async (req, res) => {
   try {
     const dateRange = getDateRange(req.query);
     
-    // Fetch all attendance for all employees in one go
-    const records = await Attendance.find({
-      date: { $gte: dateRange.from, $lte: dateRange.to }
-    })
-    .populate('userId', 'name employeeId department')
-    .sort({ date: 1, 'userId.name': 1 });
+    // Fetch all relevant employees
+    const employees = await User.find({ role: 'employee', isActive: true })
+      .select('name email employeeId department role joiningDate');
+    
+    const settings = await Settings.getSettings();
+    const comprehensiveRecords = await processComprehensiveAttendance(dateRange.from, dateRange.to, employees, settings);
 
-    // Remove any admin records if somehow picked up
-    const filteredRecords = records.filter(r => r.userId?.role !== 'admin');
-
-    await generateBulkAttendancePDF(res, filteredRecords, dateRange);
+    await generateBulkAttendancePDF(res, comprehensiveRecords, dateRange);
     
   } catch (err) {
     console.error('Bulk export error:', err);
@@ -224,13 +220,11 @@ const exportLeavePDF = async (req, res) => {
 const exportAttendanceCSV = async (req, res) => {
   try {
     const dateRange = getDateRange(req.query);
-    const records = await Attendance.find({
-      date: { $gte: dateRange.from, $lte: dateRange.to }
-    })
-    .populate('userId', 'name employeeId department role')
-    .sort({ date: 1 });  // Sort only by date (can't sort by populated field)
-
-    const filtered = records.filter(r => r.userId && r.userId.role !== 'admin');
+    const employees = await User.find({ role: 'employee', isActive: true })
+      .select('name email employeeId department role joiningDate');
+    
+    const settings = await Settings.getSettings();
+    const filtered = await processComprehensiveAttendance(dateRange.from, dateRange.to, employees, settings);
 
     // Helper: format YYYY-MM-DD string to DD-MMM-YYYY (prevents Excel auto-conversion)
     const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

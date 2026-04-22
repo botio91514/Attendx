@@ -855,85 +855,145 @@ const getAllAttendance = async (req, res, next) => {
  * @route   GET /api/attendance/admin/report
  * @access  Private/Admin
  */
+/**
+ * Helper to generate comprehensive attendance data for a range and set of employees
+ * Used by both reporting and exporting
+ */
+const processComprehensiveAttendance = async (from, to, employees, settings) => {
+  const startD = new Date(from);
+  const endD = new Date(to);
+  const todayStr = getISTDateString();
+  const employeeIds = employees.map(e => e._id);
+
+  // Fetch all raw data for the range
+  const attendanceRecords = await Attendance.find({
+    date: { $gte: from, $lte: to },
+    userId: { $in: employeeIds }
+  }).lean();
+
+  const leaves = await Leave.find({
+    status: 'approved',
+    userId: { $in: employeeIds },
+    startDate: { $lte: to },
+    endDate: { $gte: from }
+  }).lean();
+
+  const holidays = await Holiday.find({
+    date: { $gte: startD, $lte: endD }
+  }).lean();
+
+  const combinedRecords = [];
+  
+  for (const emp of employees) {
+    let current = new Date(startD);
+    while (current <= endD) {
+      const dateStr = current.toISOString().split('T')[0];
+      if (dateStr > todayStr) {
+        current.setDate(current.getDate() + 1);
+        continue; // Don't report future dates
+      }
+
+      const empIdStr = emp._id.toString();
+      
+      // Find existing attendance
+      const attendance = attendanceRecords.find(a => 
+        a.date === dateStr && a.userId.toString() === empIdStr
+      );
+
+      if (attendance) {
+        combinedRecords.push({
+          ...attendance,
+          userId: emp
+        });
+      } else {
+        // Check for Leave
+        const leave = leaves.find(l => 
+          l.userId.toString() === empIdStr &&
+          dateStr >= l.startDate && dateStr <= l.endDate
+        );
+
+        if (leave) {
+          combinedRecords.push({
+            userId: emp,
+            date: dateStr,
+            status: 'leave',
+            leaveType: leave.leaveType,
+            isVirtual: true,
+            totalWorkingHours: 0,
+            totalBreakTime: 0
+          });
+        } else {
+          // Check for Holiday
+          const holiday = holidays.find(h => h.date.toISOString().split('T')[0] === dateStr);
+          const isSunday = current.getDay() === 0;
+          const isWorkingDay = settings.workingDays.includes(current.getDay());
+
+          if (holiday) {
+            combinedRecords.push({
+              userId: emp,
+              date: dateStr,
+              status: 'holiday',
+              title: holiday.title,
+              isVirtual: true,
+              totalWorkingHours: 0,
+              totalBreakTime: 0
+            });
+          } else if (!isWorkingDay || isSunday) {
+            combinedRecords.push({
+              userId: emp,
+              date: dateStr,
+              status: 'holiday',
+              title: isSunday ? 'Sunday' : 'Weekly Off',
+              isVirtual: true,
+              totalWorkingHours: 0,
+              totalBreakTime: 0
+            });
+          } else {
+            // Mark as Absent
+            combinedRecords.push({
+              userId: emp,
+              date: dateStr,
+              status: 'absent',
+              isVirtual: true,
+              totalWorkingHours: 0,
+              totalBreakTime: 0
+            });
+          }
+        }
+      }
+      current.setDate(current.getDate() + 1);
+    }
+  }
+
+  // Sort by date descending
+  combinedRecords.sort((a, b) => b.date.localeCompare(a.date) || a.userId.name.localeCompare(b.userId.name));
+  
+  return combinedRecords;
+};
+
 const getAttendanceReport = async (req, res, next) => {
   try {
     const { from, to, userId, department } = req.query;
 
-    // Build query
-    const query = {};
-
-    if (from && to) {
-      query.date = { $gte: from, $lte: to };
-    } else if (from) {
-      query.date = { $gte: from };
-    } else if (to) {
-      query.date = { $lte: to };
+    if (!from || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'From and To dates are required for report generation',
+      });
     }
 
+    const settings = await Settings.getSettings();
+
+    // 1. Get relevant employees
+    const userQuery = { role: 'employee', isActive: true };
     if (userId) {
-      query.userId = userId;
+      userQuery._id = userId;
+    } else if (department && department !== 'All') {
+      userQuery.department = department;
     }
+    const employees = await User.find(userQuery).select('name email employeeId department designation');
 
-    // If department filter is applied, get users from that department first
-    if (department && !userId) {
-      const usersInDept = await User.find({ department }).select('_id');
-      const userIds = usersInDept.map((u) => u._id);
-      query.userId = { $in: userIds };
-    }
-
-    const attendance = await Attendance.find(query)
-      .sort({ date: -1 })
-      .populate('userId', 'name email employeeId department designation');
-
-    const leaveQuery = { status: 'approved' };
-    if (from && to) {
-      const startRange = new Date(from);
-      const endRange = new Date(to);
-      endRange.setHours(23, 59, 59, 999);
-
-      leaveQuery.$or = [
-        { startDate: { $lte: endRange }, endDate: { $gte: startRange } }
-      ];
-    }
-    if (userId) leaveQuery.userId = userId;
-    else if (department) {
-      const usersInDept = await User.find({ department }).select('_id');
-      const userIds = usersInDept.map((u) => u._id);
-      leaveQuery.userId = { $in: userIds };
-    }
-
-    const leaves = await Leave.find(leaveQuery).populate('userId', 'name email employeeId department designation');
-
-    // Combine them: For each day of leave, if no attendance exists, add a virtual record
-    const combinedRecords = [...attendance];
-
-    // We only create leave records if they don't already have an attendance record for that specific date
-    leaves.forEach(leave => {
-      let curr = new Date(Math.max(new Date(leave.startDate), new Date(from || leave.startDate)));
-      const last = new Date(Math.min(new Date(leave.endDate), new Date(to || leave.endDate)));
-
-      while (curr <= last) {
-        const dateStr = curr.toISOString().split('T')[0];
-        const hasAttendance = attendance.find(a =>
-          a.date === dateStr && a.userId._id.toString() === leave.userId._id.toString()
-        );
-
-        if (!hasAttendance) {
-          combinedRecords.push({
-            userId: leave.userId,
-            date: dateStr,
-            status: 'leave',
-            isVirtual: true, // Internal flag
-            totalWorkingHours: 0,
-            totalBreakTime: 0
-          });
-        }
-        curr.setDate(curr.getDate() + 1);
-      }
-    });
-
-    // Re-sort combined list
-    combinedRecords.sort((a, b) => b.date.localeCompare(a.date));
+    const combinedRecords = await processComprehensiveAttendance(from, to, employees, settings);
 
     // Calculate statistics
     const stats = calculateStats(combinedRecords);
@@ -945,7 +1005,7 @@ const getAttendanceReport = async (req, res, next) => {
         stats,
         filters: { from, to, userId, department },
       },
-      message: 'Attendance report generated with leave integration',
+      message: 'Attendance report generated with full coverage (absent/holidays included)',
     });
   } catch (error) {
     next(error);
@@ -1066,6 +1126,7 @@ module.exports = {
   getAllAttendance,
   getAttendanceReport,
   getTodayStats,
+  processComprehensiveAttendance,
   checkInValidation,
   checkOutValidation,
   historyValidation,
