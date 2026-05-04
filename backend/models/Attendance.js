@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getISTMinutesFromMidnight } = require('../utils/timeUtils');
 
 const breakSchema = new mongoose.Schema(
   {
@@ -67,6 +68,11 @@ const attendanceSchema = new mongoose.Schema(
       exceededPolicy: { type: Boolean, default: false },
       alertSent: { type: Boolean, default: false }
     },
+    workFraction: {
+      type: Number,
+      enum: [0, 0.5, 1],
+      default: 0
+    },
     leaveMeta: {
       cl: { type: Number, default: 0 },
       sl: { type: Number, default: 0 },
@@ -99,58 +105,100 @@ attendanceSchema.methods.calculateWorkingHours = function () {
   const totalMinutes = Math.floor((checkOutTime - checkInTime) / (1000 * 60));
 
   // Subtract break time
-  const workingMinutes = totalMinutes - this.totalBreakTime;
+  const totalBreak = Number(this.totalBreakTime || 0);
+  const workingMinutes = totalMinutes - totalBreak;
 
   return workingMinutes > 0 ? workingMinutes : 0;
 };
 
-// Method to determine status based on check-in time and working hours
+// Method to determine status and work fraction based on check-in time, working hours and leaves
 attendanceSchema.methods.determineStatus = function (settings = null) {
-  // If manual override for leave or holiday, or persistently flagged as manual, keep it
-  if (['leave', 'holiday'].includes(this.status) || this.isManualOverride || this._isManualStatus) {
-    return this.status;
+  // 1. Manual Override takes highest priority
+  if (this.isManualOverride || this._isManualStatus) {
+    return { status: this.status, workFraction: this.workFraction };
   }
 
-  // If no check-in, status remains absent
-  if (!this.checkIn) {
-    return 'absent';
-  }
+  // 2. Calculate Work Component (Priority 1)
+  let calculatedWorkFraction = 0;
+  let isLate = false;
 
-  // Get dynamic settings or use defaults
-  const startTimeStr = settings?.officeStartTime || '09:15';
-  const graceMinutes = Number(settings?.lateGracePeriod || 0);
-  const halfDayHours = settings?.halfDayThreshold || 5;
-
-  const [startHour, startMinute] = startTimeStr.split(':').map(Number);
-  
-  // Check for half-day (Highest priority after Absence)
-  // 🛡️ FINANCIAL SAFETY: Add 15m grace buffer to prevent "50% pay loss" cliff
-  if (this.checkOut) {
+  if (this.checkIn) {
+    const halfDayHours = settings?.halfDayThreshold || 7;
     const workingHours = this.calculateWorkingHours();
     const halfDayMinutes = halfDayHours * 60;
-    const graceBuffer = 15; // 15 minutes grace
+    const graceBuffer = 15;
 
-    if (workingHours < (halfDayMinutes - graceBuffer)) {
-      return 'half-day';
+    // Check if late
+    const startTimeStr = settings?.officeStartTime || '09:15';
+    const graceMinutes = Number(settings?.lateGracePeriod || 0);
+    const [startHour, startMinute] = startTimeStr.split(':').map(Number);
+
+    const currentTotalMin = getISTMinutesFromMidnight(this.checkIn);
+    const thresholdTotalMin = (startHour * 60) + startMinute + graceMinutes;
+    isLate = currentTotalMin > thresholdTotalMin;
+
+    if (this.checkOut) {
+      if (workingHours >= (halfDayMinutes - graceBuffer)) {
+        calculatedWorkFraction = 1.0;
+      } else if (workingHours > 30) { // At least 30 mins for half day
+        calculatedWorkFraction = 0.5;
+      }
+    } else {
+      // Currently working - assume 0.5 until checkout
+      // Check if it's already a "full day" late (optional logic, but let's stick to 0.5 for now)
+      calculatedWorkFraction = 0.5;
     }
   }
 
-  // Check if late (Using centralized IST utility)
-  const { getISTMinutesFromMidnight } = require('../utils/timeUtils');
-  
-  const currentTotalMin = getISTMinutesFromMidnight(this.checkIn);
-  const thresholdTotalMin = (startHour * 60) + startMinute + graceMinutes;
+  // 3. Calculate Leave Component (Priority 2 - Fills remaining time)
+  const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+  let totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
 
-  if (currentTotalMin > thresholdTotalMin) {
-    return 'late';
+  // 4. Clamping Rule: Total (Work + Leave) ≤ 1.0
+  // Leave is only counted for the "gap" left by work
+  const maxAllowedLeave = 1.0 - calculatedWorkFraction;
+  const effectiveLeave = Math.min(totalLeave, maxAllowedLeave);
+
+  // 5. Final Status Derivation
+  let finalStatus = 'absent';
+  const totalCredit = calculatedWorkFraction + effectiveLeave;
+
+  if (totalCredit >= 1.0) {
+    if (calculatedWorkFraction === 1.0) {
+      finalStatus = isLate ? 'late' : 'present';
+    } else if (effectiveLeave >= 1.0) {
+      finalStatus = 'leave';
+    } else {
+      finalStatus = 'present'; // Combined full day
+    }
+  } else if (totalCredit >= 0.5) {
+    finalStatus = 'half-day';
   }
 
-  return 'present';
+  return { status: finalStatus, workFraction: calculatedWorkFraction };
+};
+
+// Method to get detailed breakdown string
+attendanceSchema.methods.getBreakdownString = function () {
+  const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+  const work = this.workFraction || 0;
+
+  const components = [];
+
+  if (work > 0) components.push(`${work} Work`);
+
+  if (meta.cl > 0) components.push(`${meta.cl} CL`);
+  if (meta.sl > 0) components.push(`${meta.sl} SL`);
+  if (meta.rl > 0) components.push(`${meta.rl} RL`);
+  if (meta.lwp > 0) components.push(`${meta.lwp} LWP`);
+
+  if (components.length === 0) return 'Absent';
+  return components.join(' + ');
 };
 
 // Pre-save middleware to auto-calculate fields
 attendanceSchema.pre('save', function (next) {
-  // Calculate total break time from both old and new systems (Fix for consistency)
+  // Calculate total break time
   const oldBreaksTotal = (this.breaks || []).reduce((total, b) => total + (b.duration || 0), 0);
   const newBreakTotal = this.break?.durationMinutes || 0;
   this.totalBreakTime = oldBreaksTotal + newBreakTotal;
@@ -160,8 +208,17 @@ attendanceSchema.pre('save', function (next) {
     this.totalWorkingHours = this.calculateWorkingHours();
   }
 
-  // Determine status - use attached settings if they exist
-  this.status = this.determineStatus(this._settings);
+  // Determine status and fraction automatically UNLESS it's a manual override
+  const { status: autoStatus, workFraction: autoWorkFraction } = this.determineStatus(this._settings);
+
+  // We always update workFraction to keep calculations accurate
+  this.workFraction = autoWorkFraction;
+
+  // Only update status if it's NOT a manual override
+  // We check both the persistent flag and the temporary lifecycle flag
+  if (!this.isManualOverride && !this._isManualStatus) {
+    this.status = autoStatus;
+  }
 
   next();
 });

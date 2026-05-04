@@ -15,7 +15,7 @@ const settingsSchema = new mongoose.Schema({
   },
   halfDayThreshold: {
     type: Number,
-    default: 5, // hours for half day
+    default: 7, // Minimum hours to be considered a Full Day (Present)
   },
   maxBreakLimit: {
     type: Number,

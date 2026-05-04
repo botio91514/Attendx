@@ -11,7 +11,7 @@ const startBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
     
-    const { getISTDateString } = require('../utils/timeUtils');
+    const { getISTDateString, toIST } = require('../utils/timeUtils');
     const today = getISTDateString();
 
     // 1. Find today's attendance record
@@ -43,7 +43,7 @@ const startBreak = async (req, res, next) => {
       { userId, date: today, 'break.isOnBreak': { $ne: true } },
       {
         $set: {
-          'break.startTime': new Date(),
+          'break.startTime': toIST(new Date()),
           'break.isOnBreak': true
         }
       },
@@ -75,6 +75,7 @@ const startBreak = async (req, res, next) => {
 const endBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
+    const { toIST } = require('../utils/timeUtils');
     const today = getTodayDate();
 
     const attendance = await Attendance.findOne({ userId, date: today });
@@ -109,7 +110,7 @@ const endBreak = async (req, res, next) => {
       { userId, date: today, 'break.isOnBreak': true },
       {
         $set: {
-          'break.endTime': endTime,
+          'break.endTime': toIST(endTime),
           'break.isOnBreak': false,
           'break.durationMinutes': currentTotalMinutes,
           'break.exceededPolicy': exceededPolicy
@@ -123,7 +124,9 @@ const endBreak = async (req, res, next) => {
     if (updatedAttendance) {
       updatedAttendance.totalBreakTime = updatedAttendance.break.durationMinutes;
       if (updatedAttendance.checkIn && updatedAttendance.checkOut) {
-        const totalMin = Math.floor((new Date(updatedAttendance.checkOut) - new Date(updatedAttendance.checkIn)) / 60000);
+        const checkOut = new Date(updatedAttendance.checkOut);
+        const checkIn = new Date(updatedAttendance.checkIn);
+        const totalMin = Math.floor((checkOut - checkIn) / 60000);
         updatedAttendance.totalWorkingHours = totalMin - updatedAttendance.totalBreakTime;
       }
       await updatedAttendance.save();
@@ -171,9 +174,12 @@ const getBreakStatus = async (req, res, next) => {
     // Calculate net working minutes (Bug 1 Backend Fix)
     let netWorkingMinutes = 0;
     if (attendance.checkIn) {
-      const totalElapsed = Math.floor((new Date() - new Date(attendance.checkIn)) / 60000);
+      const { toIST } = require('../utils/timeUtils');
+      const nowIST = toIST(new Date());
+      const checkInIST = new Date(attendance.checkIn);
+      const totalElapsed = Math.floor((nowIST - checkInIST) / 60000);
       const currentBreakElapsed = breakData.isOnBreak 
-        ? Math.floor((new Date() - new Date(breakData.startTime)) / 60000)
+        ? Math.floor((nowIST - new Date(breakData.startTime)) / 60000)
         : 0;
       netWorkingMinutes = totalElapsed - (actualDuration + currentBreakElapsed);
     }
@@ -188,7 +194,7 @@ const getBreakStatus = async (req, res, next) => {
         breakEndTime: breakData.endTime || null,
         breakDurationMinutes: actualDuration,
         policyDurationMinutes,
-        exceededPolicy: !!breakData.exceededPolicy,
+        exceededPolicy: actualDuration > policyDurationMinutes, // DYNAMIC CHECK
         remainingBreakMinutes: Math.max(0, policyDurationMinutes - actualDuration),
         netWorkingMinutes: Math.max(0, netWorkingMinutes)
       }
@@ -206,11 +212,14 @@ const getBreakStatus = async (req, res, next) => {
 const getBreakHistory = async (req, res, next) => {
   try {
     const { date, employeeId, exceededOnly, page = 1, limit = 10 } = req.query;
+    const settings = await Settings.getSettings();
+    const policyLimit = settings.breakDurationMinutes || 60;
+
     const query = { 'break.startTime': { $ne: null } };
 
     if (date) query.date = date;
     if (employeeId) query.userId = employeeId;
-    if (exceededOnly === 'true') query['break.exceededPolicy'] = true;
+    if (exceededOnly === 'true') query['break.durationMinutes'] = { $gt: policyLimit };
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -221,9 +230,6 @@ const getBreakHistory = async (req, res, next) => {
       .limit(parseInt(limit));
 
     const total = await Attendance.countDocuments(query);
-
-    const settings = await Settings.getSettings();
-    const policyLimit = settings.breakDurationMinutes || 60;
 
     res.status(200).json({
       success: true,

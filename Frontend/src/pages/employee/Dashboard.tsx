@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import BreakTimer from '@/components/BreakTimer';
+import { getISTToday, formatISTTime, formatISTDate } from '@/utils/dateUtils';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } };
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -78,7 +79,7 @@ const EmployeeDashboard: React.FC = () => {
       }
 
       if (holidayRes.success && Array.isArray(holidayRes.data)) {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getISTToday();
         const todayHoliday = holidayRes.data.find((h: any) => h.date.split('T')[0] === todayStr);
         if (todayHoliday) {
           setStats(prev => ({ ...prev, holiday: todayHoliday.title }));
@@ -117,7 +118,7 @@ const EmployeeDashboard: React.FC = () => {
           todayStatus: attendance.status
             ? attendance.status.charAt(0).toUpperCase() + attendance.status.slice(1)
             : 'Not Checked In',
-          checkInDisplay: attendance.checkIn ? new Date(attendance.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--',
+          checkInDisplay: attendance.checkIn ? formatISTTime(attendance.checkIn) : '--:--',
         }));
         setTodayBreaks(attendance.breaks || []);
       }
@@ -163,9 +164,9 @@ const EmployeeDashboard: React.FC = () => {
     const list: any[] = [];
     if (checkInTime) list.push({ type: 'Check-in', time: stats.checkInDisplay, icon: <Play className="w-3 h-3" />, color: 'text-success' });
     todayBreaks.forEach((b, i) => {
-      list.push({ type: 'Break Start', time: new Date(b.breakStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), icon: <Pause className="w-3 h-3" />, color: 'text-warning' });
+      list.push({ type: 'Break Start', time: formatISTTime(b.breakStart), icon: <Pause className="w-3 h-3" />, color: 'text-warning' });
       if (b.breakEnd) {
-        list.push({ type: 'Break End', time: new Date(b.breakEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), icon: <Coffee className="w-3 h-3" />, color: 'text-primary' });
+        list.push({ type: 'Break End', time: formatISTTime(b.breakEnd), icon: <Coffee className="w-3 h-3" />, color: 'text-primary' });
       }
     });
     return list.reverse();
@@ -258,7 +259,7 @@ const EmployeeDashboard: React.FC = () => {
               </h1>
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                  <CalendarDays className="w-4 h-4" /> 
-                 {new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+                 {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', month: 'long', day: 'numeric' })}
               </p>
            </div>
         </div>
@@ -433,7 +434,7 @@ const EmployeeDashboard: React.FC = () => {
                       </div>
                       <div className="text-right">
                         <span className="text-xs font-mono font-bold text-success bg-success/10 px-2.5 py-1 rounded-md">
-                          {d.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          {formatISTDate(new Date(holiday.date))}
                         </span>
                       </div>
                     </div>

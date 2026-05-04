@@ -10,14 +10,14 @@ const getTodayDate = () => {
 
 /**
  * Format a date object to YYYY-MM-DD
- * @param {Date} date
+ * @param {Date} date - Assumes IST-shifted date
  * @returns {String} date string
  */
 const formatDate = (date) => {
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
 
@@ -28,8 +28,9 @@ const formatDate = (date) => {
  * @returns {Object} { startStr, endStr }
  */
 const getMonthRange = (year, month) => {
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0); // Last day of month
+  // Use UTC to create stable month boundaries
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  const endDate = new Date(Date.UTC(year, month, 0)); // Last day of month
   
   return {
     startStr: formatDate(startDate),

@@ -3,6 +3,7 @@ const Task = require('../models/Task');
 const WorkSession = require('../models/WorkSession');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
+const { toIST, parseISTToShiftedDate } = require('../utils/timeUtils');
 
 /**
  * @desc    Upsert attendance record for an employee (Manual Admin Override)
@@ -23,12 +24,12 @@ exports.overrideAttendance = async (req, res, next) => {
       attendance = new Attendance({ userId, date });
     }
 
-    // Apply manual updates
+    // Apply manual updates (Using parseISTToShiftedDate to prevent double-shifting)
     if (checkIn !== undefined) {
-      attendance.checkIn = checkIn ? new Date(checkIn) : null;
+      attendance.checkIn = checkIn ? parseISTToShiftedDate(checkIn) : null;
     }
     if (checkOut !== undefined) {
-      attendance.checkOut = checkOut ? new Date(checkOut) : null;
+      attendance.checkOut = checkOut ? parseISTToShiftedDate(checkOut) : null;
     }
     
     if (status) {
@@ -41,8 +42,8 @@ exports.overrideAttendance = async (req, res, next) => {
     
     if (breaks) {
       attendance.breaks = breaks.map(b => ({
-        breakStart: b.breakStart ? new Date(b.breakStart) : new Date(),
-        breakEnd: b.breakEnd ? new Date(b.breakEnd) : null,
+        breakStart: b.breakStart ? toIST(b.breakStart) : toIST(new Date()),
+        breakEnd: b.breakEnd ? toIST(b.breakEnd) : null,
         duration: (b.breakStart && b.breakEnd) 
           ? Math.floor((new Date(b.breakEnd) - new Date(b.breakStart)) / (1000 * 60)) 
           : 0
@@ -100,8 +101,8 @@ exports.overrideTask = async (req, res, next) => {
       await WorkSession.create({
         taskId,
         userId: task.assignedTo,
-        startTime,
-        endTime,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
         duration
       });
 

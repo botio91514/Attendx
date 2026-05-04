@@ -6,6 +6,7 @@ import { Download, ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon,
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
+import { formatISTDate, formatISTTime, getISTToday } from '@/utils/dateUtils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -54,6 +55,7 @@ const AttendancePage: React.FC = () => {
       late: attendance.filter(d => d.status === 'late').length,
       leave: attendance.filter(d => d.status === 'leave').length,
       holiday: attendance.filter(d => d.status === 'holiday').length,
+      halfDay: attendance.filter(d => d.status === 'half-day').length,
     };
   };
 
@@ -69,8 +71,7 @@ const AttendancePage: React.FC = () => {
   };
 
   const formatTime = (timeStr: string | null) => {
-    if (!timeStr) return '—';
-    return new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatISTTime(timeStr);
   };
 
   const formatWorkingHours = (minutes: number | null | undefined) => {
@@ -103,7 +104,7 @@ const AttendancePage: React.FC = () => {
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const record = attendance.find(a => a.date.startsWith(dateStr));
-      const isToday = new Date().toISOString().split('T')[0] === dateStr;
+      const isToday = getISTToday() === dateStr;
       const isSunday = new Date(year, month, d).getDay() === 0;
 
       let bgClass = "bg-secondary/10 border-glass-border/30";
@@ -127,8 +128,12 @@ const AttendancePage: React.FC = () => {
           IconNode = <Clock className="w-8 h-8 text-warning/20 absolute inset-0 m-auto pointer-events-none" />; 
         }
         else if (record.status === 'leave') { 
-          bgClass = "bg-primary/20 border-primary/40 shadow-[inset_0_0_20px_rgba(var(--primary),0.1)]"; 
-          IconNode = <Palmtree className="w-10 h-10 text-primary/30 absolute inset-0 m-auto pointer-events-none" />; 
+          bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]"; 
+          IconNode = <Palmtree className="w-10 h-10 text-indigo-500/20 absolute inset-0 m-auto pointer-events-none" />; 
+        }
+        else if (record.status === 'half-day') { 
+          bgClass = "bg-primary/10 border-primary/30 shadow-[inset_0_0_20px_rgba(var(--primary),0.05)]"; 
+          IconNode = <CheckCircle2 className="w-8 h-8 text-primary/20 absolute inset-0 m-auto pointer-events-none" />; 
         }
         else if (record.status === 'holiday') {
           bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]";
@@ -144,19 +149,12 @@ const AttendancePage: React.FC = () => {
 
           {record || isSunday ? (
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5 z-10 w-fit">
-              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${isSunday && (!record || record.status === 'holiday') ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : record?.status === 'leave' ? 'bg-primary/40 text-primary-foreground shadow-sm' : 'bg-indigo-500/40 text-white'}`}>
-                  {(record?.leaveMeta && (record.leaveMeta.cl > 0 || record.leaveMeta.sl > 0 || record.leaveMeta.lwp > 0)) ? (
-                   <span className="flex flex-wrap gap-1">
-                     {record.status !== 'leave' && <span className="mr-1">{record.status}</span>}
-                     {record.leaveMeta.cl > 0 && ` + ${record.leaveMeta.cl} CL`}
-                     {record.leaveMeta.sl > 0 && ` + ${record.leaveMeta.sl} SL`}
-                     {record.leaveMeta.lwp > 0 && ` + ${record.leaveMeta.lwp} LWP`}
-                   </span>
-                 ) : record?.status}
+              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded backdrop-blur-md ${isSunday && (!record || record.status === 'holiday') ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : record?.status === 'leave' ? 'bg-indigo-500/40 text-white' : 'bg-primary/20 text-primary'}`}>
+                  {record?.breakdownString || record?.status || (isSunday ? 'Holiday' : '')}
               </span>
               {record?.checkIn && (
                 <span className="text-[9px] font-mono font-medium text-foreground hidden sm:block mt-1 pl-1">
-                  In: {new Date(record.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  In: {formatISTTime(record.checkIn)}
                 </span>
               )}
             </div>
@@ -216,7 +214,8 @@ const AttendancePage: React.FC = () => {
               const m = currentDate.getMonth() + 1;
               const y = currentDate.getFullYear();
               const from = `${y}-${String(m).padStart(2, '0')}-01`;
-              const to = new Date(y, m, 0).toISOString().split('T')[0];
+              const lastDay = new Date(y, m, 0);
+              const to = formatISTDate(lastDay);
               window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/export/attendance/all/csv?from=${from}&to=${to}`, '_blank');
             }}
             className="glow-button flex items-center justify-center gap-2 text-sm py-2 shrink-0"
@@ -258,14 +257,24 @@ const AttendancePage: React.FC = () => {
             <p className="text-4xl font-mono font-bold text-foreground relative z-10 drop-shadow-sm">{summary.late}</p>
           </div>
         </div>
+        <div className="glass-card p-5 border-indigo-500/20 relative overflow-hidden group">
+          <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-colors" />
+          <div className="flex flex-col relative z-10">
+            <div className="flex items-center gap-2 mb-3">
+              <Palmtree className="w-5 h-5 text-indigo-500" />
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Leave</span>
+            </div>
+            <p className="text-4xl font-mono font-bold text-foreground relative z-10 drop-shadow-sm">{summary.leave}</p>
+          </div>
+        </div>
         <div className="glass-card p-5 border-primary/20 relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-colors" />
           <div className="flex flex-col relative z-10">
             <div className="flex items-center gap-2 mb-3">
-              <Palmtree className="w-5 h-5 text-primary" />
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Leave</span>
+              <CheckCircle2 className="w-5 h-5 text-primary" />
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Half-Day</span>
             </div>
-            <p className="text-4xl font-mono font-bold text-foreground relative z-10 drop-shadow-sm">{summary.leave}</p>
+            <p className="text-4xl font-mono font-bold text-foreground relative z-10 drop-shadow-sm">{summary.halfDay}</p>
           </div>
         </div>
         <div className="glass-card p-5 border-indigo-500/20 relative overflow-hidden group">
@@ -311,16 +320,9 @@ const AttendancePage: React.FC = () => {
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{formatTime(row.checkOut)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                       <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
-                      <td className="px-4 py-4"><span className={getStatusColor(row.status)}>{
-                        (row.leaveMeta && (row.leaveMeta.cl > 0 || row.leaveMeta.sl > 0 || row.leaveMeta.lwp > 0)) ? (
-                          <span className="flex flex-wrap gap-1">
-                            {row.status !== 'leave' && <span className="mr-1">{row.status}</span>}
-                            {row.leaveMeta.cl > 0 && `${row.leaveMeta.cl} CL`}
-                            {row.leaveMeta.sl > 0 && `${row.leaveMeta.sl} SL`}
-                            {row.leaveMeta.lwp > 0 && `${row.leaveMeta.lwp} LWP`}
-                          </span>
-                        ) : row.status
-                      }</span></td>
+                      <td className="px-4 py-4"><span className={getStatusColor(row.status)}>
+                        {row.breakdownString || row.status}
+                      </span></td>
                     </tr>
                   ))
                 )}

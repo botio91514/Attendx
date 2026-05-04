@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { ExportButton } from '@/components/ExportButton';
 import { useNotifications } from '@/context/NotificationContext';
 import { useAuth } from '@/context/AuthContext';
+import { getISTToday } from '@/utils/dateUtils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 const tabs = ['Pending', 'Approved', 'Rejected', 'All'] as const;
@@ -19,7 +20,10 @@ const LeaveRequests: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [csvLoading, setCsvLoading] = useState(false);
   const [leaves, setLeaves] = useState<any[]>([]);
-  const [exportRange, setExportRange] = useState({from: new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0], to: new Date().toISOString().split('T')[0]});
+  const [exportRange, setExportRange] = useState({
+    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    to: getISTToday()
+  });
   const [exportEmp, setExportEmp] = useState('');
   
   const uniqueEmployees = Array.from(new Map(leaves.map(l => [l.userId?._id, l.userId])).values()).filter(Boolean);
@@ -170,7 +174,10 @@ const LeaveRequests: React.FC = () => {
                   </a>
                 )}
               </div>
-              <span className="status-leave text-xs">{leave.leaveType}</span>
+              <div className="flex flex-col gap-1 items-center">
+                <span className="status-leave text-xs">{leave.leaveType}</span>
+                {leave.isHalfDay && <span className="bg-amber-500/10 text-amber-500 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-500/20 uppercase">Half Day</span>}
+              </div>
               <div className="flex flex-col items-end gap-1 px-4 border-l border-glass-border">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Engine Breakdown</span>
                 <div className="flex gap-1">

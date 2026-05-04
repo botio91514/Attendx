@@ -66,7 +66,7 @@ const AdminEmployeeProfilePage: React.FC = () => {
                     department: p.department || '',
                     role: p.role || 'employee',
                     baseSalary: p.baseSalary || 0,
-                    joiningDate: p.joiningDate ? new Date(p.joiningDate).toISOString().split('T')[0] : '',
+                    joiningDate: p.joiningDate ? new Date(p.joiningDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) : '',
                     isActive: p.isActive !== undefined ? p.isActive : true,
                     phone: p.phone || '',
                     address: p.address || ''

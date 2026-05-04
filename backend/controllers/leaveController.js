@@ -7,8 +7,12 @@ const Settings = require('../models/Settings');
 const Holiday = require('../models/Holiday');
 const Payroll = require('../models/Payroll');
 const AuditLog = require('../models/AuditLog');
-const {
+const { 
+  getISTDateString, 
   getCurrentYear,
+  toIST
+} = require('../utils/timeUtils');
+const {
   distributeLeave,
   getDatesBetween
 } = require('../utils/leaveHelpers');
@@ -37,12 +41,15 @@ const applyLeave = async (req, res, next) => {
       Holiday.find({ isActive: true })
     ]);
 
-    const holidayStrings = holidays.map(h => new Date(h.date).toISOString().split('T')[0]);
+    const holidayStrings = holidays.map(h => {
+      const d = new Date(h.date);
+      return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+    });
 
     // 🛡️ TIMEZONE-SAFE FILTERING (Sundays and Holidays)
     const allDates = getDatesBetween(new Date(startDate), new Date(endDate)).filter(dStr => {
       const [y, m, d] = dStr.split('-').map(Number);
-      const isSunday = new Date(y, m - 1, d).getDay() === 0;
+      const isSunday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
       return !isSunday && !holidayStrings.includes(dStr);
     });
 
@@ -72,7 +79,7 @@ const applyLeave = async (req, res, next) => {
 
     // 4. STRICT MONTHLY & YEARLY LIMIT ENGINE
     const monthsInvolved = [...new Set(allDates.map(d => d.slice(0, 7)))];
-    const currentYear = new Date(startDate).getFullYear().toString();
+    const currentYear = getISTDateString().slice(0, 4);
 
     const monthlyUsed = {};
     monthsInvolved.forEach(m => monthlyUsed[m] = { cl: 0 });
@@ -193,19 +200,16 @@ const approveLeave = async (req, res, next) => {
       }
     }
 
-    // 2. UPDATE BALANCE (Used counts)
+    // 2. FETCH BALANCE FOR VALIDATION
     const currentYear = getCurrentYear();
-    await LeaveBalance.findOneAndUpdate(
-      { userId: leave.userId._id, year: currentYear },
-      { 
-        $inc: { 
-          'casual.used': leave.clDays,
-          'sick.used': leave.slDays,
-          'religious.used': leave.rlDays,
-          'unpaid.used': leave.lwpDays
-        }
-      }
-    );
+    const balanceDoc = await LeaveBalance.findOne({ userId: leave.userId._id, year: currentYear });
+    if (!balanceDoc) return res.status(400).json({ success: false, message: 'Leave balance not found' });
+
+    let availableCL = balanceDoc.casual.total - balanceDoc.casual.used;
+    let actualCLUsed = 0;
+    let actualSLUsed = 0;
+    let actualRLUsed = 0;
+    let actualLWPUsed = 0;
 
     // 3. Update Status (🛡️ APPROVAL SAFETY: Atomic check)
     const updatedLeave = await Leave.findOneAndUpdate(
@@ -226,59 +230,86 @@ const approveLeave = async (req, res, next) => {
 
     // 4. SYNC ATTENDANCE (Source of Truth)
     const Attendance = require('../models/Attendance');
-    
-    // Group breakdown by date to handle split days correctly
     const dateMap = {};
+
     for (const item of updatedLeave.dailyBreakdown) {
-      if (!dateMap[item.date]) dateMap[item.date] = { cl: 0, sl: 0, rl: 0, lwp: 0 };
-      const val = item.days || (updatedLeave.isHalfDay ? 0.5 : 1);
+      const date = item.date;
+      if (!dateMap[date]) dateMap[date] = { cl: 0, sl: 0, rl: 0, lwp: 0 };
+      
+      const requestedDays = item.days || (updatedLeave.isHalfDay ? 0.5 : 1);
       const type = item.leaveType.toLowerCase();
-      if (dateMap[item.date].hasOwnProperty(type)) {
-        dateMap[item.date][type] += val;
+
+      // Implement Policy: If CL and no balance -> Fallback to LWP
+      if (type === 'cl') {
+        if (availableCL >= requestedDays) {
+          dateMap[date].cl += requestedDays;
+          actualCLUsed += requestedDays;
+          availableCL -= requestedDays;
+        } else if (availableCL > 0) {
+          const splitCL = availableCL;
+          const splitLWP = requestedDays - splitCL;
+          dateMap[date].cl += splitCL;
+          dateMap[date].lwp += splitLWP;
+          actualCLUsed += splitCL;
+          actualLWPUsed += splitLWP;
+          availableCL = 0;
+        } else {
+          dateMap[date].lwp += requestedDays;
+          actualLWPUsed += requestedDays;
+        }
+      } else if (type === 'sl') {
+        dateMap[date].sl += requestedDays;
+        actualSLUsed += requestedDays;
+      } else if (type === 'rl') {
+        dateMap[date].rl += requestedDays;
+        actualRLUsed += requestedDays;
+      } else {
+        dateMap[date].lwp += requestedDays;
+        actualLWPUsed += requestedDays;
       }
     }
 
+    // 5. UPDATE FINAL BALANCE
+    await LeaveBalance.findOneAndUpdate(
+      { userId: leave.userId._id, year: currentYear },
+      { 
+        $inc: { 
+          'casual.used': actualCLUsed,
+          'sick.used': actualSLUsed,
+          'religious.used': actualRLUsed,
+          'unpaid.used': actualLWPUsed
+        }
+      }
+    );
+
     const syncResults = [];
     for (const [date, meta] of Object.entries(dateMap)) {
-      const totalLeave = meta.cl + meta.sl + meta.rl + meta.lwp;
       const notes = `Approved Leave: ${updatedLeave.leaveType.toUpperCase()} (ID: ${id})`;
-      
       let record = await Attendance.findOne({ userId: updatedLeave.userId._id, date });
       
       if (record) {
-        // Update existing record
         record.leaveMeta = meta;
         record.notes = notes;
-        
-        // Priority: If full leave (1.0), force 'leave' status
-        if (totalLeave >= 1.0) record.status = 'leave';
-        // If partial leave, only set 'leave' status if currently 'absent'
-        else if (record.status === 'absent') record.status = 'leave';
-        
-        await record.save();
+        await record.save(); // Model logic will handle workFraction priorities
       } else {
-        // Create new record
         record = await Attendance.create({
           userId: updatedLeave.userId._id,
           date,
-          status: 'leave',
           leaveMeta: meta,
           notes
         });
       }
-      syncResults.push({ date, totalLeave, status: record.status });
+      syncResults.push({ date, status: record.status });
     }
 
-    console.log(`[DEBUG] Final Sync for Leave ${id}:`, syncResults);
-
-    // 5. Audit Log
+    // 6. Audit Log
     await AuditLog.create({
       action: 'LEAVE_APPROVE',
       performedBy: adminId,
-      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}.`
+      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}. CL: ${actualCLUsed}, LWP: ${actualLWPUsed}`
     });
 
-    res.status(200).json({ success: true, message: 'Leave request approved' });
+    res.status(200).json({ success: true, message: 'Leave request approved and synced' });
 
     emitToUser(updatedLeave.userId._id.toString(), 'notification:new', {
       type: 'leave_approved',
@@ -307,7 +338,7 @@ const rejectLeave = async (req, res, next) => {
     leave.status = 'rejected';
     leave.adminComment = adminComment;
     leave.reviewedBy = adminId;
-    leave.reviewedAt = new Date();
+    leave.reviewedAt = toIST();
     await leave.save();
 
     await AuditLog.create({
@@ -377,12 +408,19 @@ const cancelLeave = async (req, res, next) => {
         }
       );
 
-      // Revert Attendance Marks (Change 'leave' back to 'absent')
+      // Revert Attendance Marks
       const Attendance = require('../models/Attendance');
-      await Attendance.updateMany(
-        { userId: leave.userId, date: { $in: leave.dailyBreakdown.map(i => i.date) }, status: 'leave' },
-        { $set: { status: 'absent', notes: 'Leave Cancelled: Reverted to Absent' } }
-      );
+      const records = await Attendance.find({ 
+        userId: leave.userId, 
+        date: { $in: leave.dailyBreakdown.map(i => i.date) }
+      });
+
+      for (const record of records) {
+        // Reset leaveMeta and notes
+        record.leaveMeta = { cl: 0, sl: 0, rl: 0, lwp: 0 };
+        record.notes = 'Leave Cancelled: Reverted';
+        await record.save(); // Triggers status recalculation
+      }
     }
 
     leave.status = 'cancelled';

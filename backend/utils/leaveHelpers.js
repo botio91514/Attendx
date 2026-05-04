@@ -4,9 +4,11 @@
  * monthsActiveInYear = currentMonth - max(1, joiningMonth) + 1 (clipped to current year)
  */
 const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl: 0 }, joiningDate) => {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+  const { toIST } = require('./timeUtils');
+  const istNow = toIST();
+  
+  const currentYear = istNow.getUTCFullYear();
+  const currentMonth = istNow.getUTCMonth() + 1;
 
   let monthsWorked = currentMonth;
   if (joiningDate) {
@@ -53,7 +55,7 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
     if (selectedType === 'sl') {
       // SL Strict Logic: Full day only and within yearly limit
       if (isHalfDay) {
-        // Should be caught by validation, but safeguard here
+        // Only CL allowed for half-day. SL half-day converts to LWP.
         breakdown.lwp += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       } else if ((yearlyUsed.sl || 0) + remainingToDistribute <= YEARLY_LIMITS.sl) {
@@ -65,7 +67,7 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else if (selectedType === 'cl') {
-      // CL Strict Logic: If the day's increment exceeds the 1.0 limit, the WHOLE day's increment is LWP
+      // CL Strict Logic: 1/month limit
       if ((monthlyUsed[monthKey].cl || 0) + remainingToDistribute <= MONTHLY_LIMITS.cl) {
         breakdown.cl += remainingToDistribute;
         monthlyUsed[monthKey].cl += remainingToDistribute;
@@ -75,8 +77,8 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else if (selectedType === 'rl') {
-      // RL Strict Logic: 2 per year
-      if ((yearlyUsed.rl || 0) + remainingToDistribute <= YEARLY_LIMITS.rl) {
+      // RL Strict Logic: 2 per year, No half-day allowed
+      if (!isHalfDay && (yearlyUsed.rl || 0) + remainingToDistribute <= YEARLY_LIMITS.rl) {
         breakdown.rl += remainingToDistribute;
         yearlyUsed.rl += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'rl', days: remainingToDistribute });
@@ -85,7 +87,8 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else {
-      // Unpaid or other
+      // Unpaid or other (Only CL was allowed for half-day per strict policy)
+      // Even if LWP, if they applied for half-day and it wasn't CL, it goes here.
       breakdown.lwp += remainingToDistribute;
       breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
     }
@@ -104,7 +107,7 @@ const getDatesBetween = (startDate, endDate) => {
   return dates;
 };
 
-const getCurrentYear = () => new Date().getFullYear();
+const { getCurrentYear } = require('./timeUtils');
 
 const dateRangesOverlap = (start1, end1, start2, end2) => {
   const s1 = new Date(start1);

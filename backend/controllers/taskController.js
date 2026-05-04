@@ -2,15 +2,15 @@ const Task = require("../models/Task")
 const WorkSession = require("../models/WorkSession")
 const User = require("../models/User")
 const Notification = require("../models/Notification")
-const { getTodayDate } = require("../utils/attendanceHelpers")
+const { getISTDateString, toIST } = require("../utils/timeUtils")
 const { emitToUser } = require("../socket/socketManager")
 
 
 /**
  * Helper: getNow()
- * Returns current UTC Date object.
+ * Returns current IST-shifted Date object.
  */
-const getNow = () => new Date()
+const getNow = () => toIST(new Date());
 
 // ─────────────────────────────────────────────
 // FUNCTION 1: createTask
@@ -33,8 +33,8 @@ exports.createTask = async (req, res, next) => {
       priority: priority || "medium",
       assignedTo: assignedTo || req.user._id,
       createdBy: req.user._id,
-      date: getTodayDate(),
-      plannedDate: plannedDate ? new Date(plannedDate) : new Date(getTodayDate())
+      date: getISTDateString(),
+      plannedDate: plannedDate ? new Date(plannedDate) : new Date(getISTDateString())
     })
 
     await task.save()
@@ -84,7 +84,7 @@ exports.createTask = async (req, res, next) => {
 exports.getMyTasks = async (req, res, next) => {
   try {
     const userId = req.user._id
-    const todayStr = getTodayDate()
+    const todayStr = getISTDateString()
     
     // IST Boundaries for precise date comparison
     const istMidnight = new Date(`${todayStr}T00:00:00Z`)
@@ -531,7 +531,7 @@ exports.deleteTask = async (req, res, next) => {
 // ─────────────────────────────────────────────
 exports.getAllTasksAdmin = async (req, res, next) => {
   try {
-    const dateStr = req.query.date || getTodayDate() // "YYYY-MM-DD"
+    const dateStr = req.query.date || getISTDateString() // "YYYY-MM-DD"
     const populateFields = "name employeeId profilePhoto"
 
     // 1. Define the IST window in UTC (Shift UTC to match IST 00:00 to 23:59)
@@ -718,7 +718,7 @@ exports.getEmployeeActivity = async (req, res, next) => {
   try {
     const { employeeId } = req.params
     const { date } = req.query
-    const todayStr = date || getTodayDate()
+    const todayStr = date || getISTDateString()
 
     // IST Window
     const startOfDay = new Date(`${todayStr}T00:00:00+05:30`)
@@ -836,8 +836,8 @@ exports.updateTask = async (req, res, next) => {
         await WorkSession.create({
           taskId: task._id,
           userId: task.assignedTo,
-          startTime: new Date(),
-          endTime: new Date(),
+          startTime: getNow(),
+          endTime: getNow(),
           duration: timeDiff,
           // We don't have isAdjustment in schema yet, but it will be saved in _doc
           description: `Admin Adjustment by ${req.user.name}` 

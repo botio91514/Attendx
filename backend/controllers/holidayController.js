@@ -41,9 +41,13 @@ const createHoliday = async (req, res, next) => {
         });
     }
 
+    const { toIST } = require('../utils/timeUtils');
+    const holidayDate = new Date(date);
+    holidayDate.setUTCHours(0, 0, 0, 0); // Start at UTC midnight
+
     const holiday = await Holiday.create({
       title,
-      date,
+      date: toIST(holidayDate),
       description,
       type: type || 'company',
       createdBy: req.user._id,

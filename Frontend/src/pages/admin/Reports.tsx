@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { ExportButton } from '@/components/ExportButton';
 import { useAuth } from '@/context/AuthContext';
+import { getISTToday, formatISTTime, formatISTDate } from '@/utils/dateUtils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -20,8 +21,8 @@ const Reports: React.FC = () => {
 
   const { token } = useAuth();
   const [filters, setFilters] = useState({
-    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    to: new Date().toISOString().split('T')[0],
+    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    to: getISTToday(),
     department: '',
     search: '',
     status: 'all'
@@ -126,24 +127,23 @@ const Reports: React.FC = () => {
   };
 
   const setDatePreset = (preset: string) => {
-    const today = new Date();
-    // Use local date to avoid UTC off-by-one
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const todayStr = toDateStr(today);
+    const todayStr = getISTToday();
+    const today = new Date(todayStr);
 
     if (preset === 'today') {
       setFilters(prev => ({ ...prev, from: todayStr, to: todayStr }));
     } else if (preset === 'yesterday') {
       const y = new Date(today); y.setDate(today.getDate() - 1);
-      const yStr = toDateStr(y);
+      const yStr = y.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       setFilters(prev => ({ ...prev, from: yStr, to: yStr }));
     } else if (preset === '7') {
       const f = new Date(today); f.setDate(today.getDate() - 6);
-      setFilters(prev => ({ ...prev, from: toDateStr(f), to: todayStr }));
+      const fStr = f.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      setFilters(prev => ({ ...prev, from: fStr, to: todayStr }));
     } else if (preset === '30') {
       const f = new Date(today); f.setDate(today.getDate() - 29);
-      setFilters(prev => ({ ...prev, from: toDateStr(f), to: todayStr }));
+      const fStr = f.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      setFilters(prev => ({ ...prev, from: fStr, to: todayStr }));
     }
   };
 
@@ -161,7 +161,7 @@ const Reports: React.FC = () => {
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const record = data?.attendance?.find((a: any) => a.date === dateStr);
-      const isToday = new Date().toISOString().split('T')[0] === dateStr;
+      const isToday = getISTToday() === dateStr;
 
       let bgClass = "bg-secondary/5 border-glass-border/20";
       let IconNode = null;
@@ -180,7 +180,7 @@ const Reports: React.FC = () => {
           {record && (
             <div className="mt-auto flex flex-col gap-1 z-10 relative">
               <span className={getStatusBadge(record.status)}>{record.status}</span>
-              {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {new Date(record.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}</span>}
+              {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {formatISTTime(record.checkIn)}</span>}
             </div>
           )}
         </div>
@@ -327,9 +327,9 @@ const Reports: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.date}</td>
-                        <td className="px-5 py-4 text-xs text-muted-foreground font-medium">{new Date(row.date).toLocaleDateString([], { weekday: 'long' })}</td>
-                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? new Date(row.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</td>
-                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? new Date(row.checkOut).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '--:--'}</td>
+                        <td className="px-5 py-4 text-xs text-muted-foreground font-medium">{new Date(row.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long' })}</td>
+                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? formatISTTime(row.checkIn) : '--:--'}</td>
+                        <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? formatISTTime(row.checkOut) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-5 py-4"><span className={getStatusBadge(row.status)}>{row.status}</span></td>
                         <td className="px-5 py-4 text-right">

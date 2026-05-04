@@ -6,6 +6,7 @@ const Leave = require('../models/Leave');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
 const { getMonthRange } = require('../utils/attendanceHelpers');
+const { toIST } = require('../utils/timeUtils');
 const { sendEmail } = require('../utils/emailService');
 const { payslipTemplate } = require('../utils/emailTemplates');
 
@@ -149,11 +150,15 @@ const getPayrollSummary = async (req, res, next) => {
         rlDaysInMonth += (meta.rl || 0);
         lwpDaysInMonth += (meta.lwp || 0);
 
-        // 🛡️ SYNC RULE: Add work credit ONLY if leave < 1.0
+        // 🛡️ SYNC RULE: Use model-calculated workFraction if available, else fallback to status inference
         if (totalLeave < 1.0) {
-          let workCredit = 0;
-          if (record.status === 'present' || record.status === 'late') workCredit = 1.0;
-          else if (record.status === 'half-day') workCredit = 0.5;
+          let workCredit = record.workFraction !== undefined ? record.workFraction : 0;
+          
+          if (record.workFraction === undefined) {
+            // Fallback for older records
+            if (record.status === 'present' || record.status === 'late') workCredit = 1.0;
+            else if (record.status === 'half-day') workCredit = 0.5;
+          }
 
           const maxAllowedWork = 1.0 - totalLeave;
           const actualWorkCredit = Math.min(workCredit, maxAllowedWork);
@@ -401,7 +406,7 @@ const bulkPay = async (req, res, next) => {
       { 
         $set: { 
           status: 'paid', 
-          paidAt: new Date() 
+          paidAt: toIST() 
         } 
       }
     );

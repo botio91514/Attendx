@@ -408,13 +408,10 @@ const startAutoCheckoutJob = () => {
       
       const results = await Promise.allSettled(
         pendingRecords.map(async (record) => {
-          // 🏆 Construct the correct UTC date from IST office end time
+          // 🏆 Construct the correct IST-shifted date for auto-checkout
           const [endH, endM] = (settings.officeEndTime || '18:15').split(':').map(Number);
-          const now = new Date();
-          const istOffset = 5.5 * 60 * 60 * 1000;
-          const istDate = new Date(now.getTime() + istOffset);
-          istDate.setUTCHours(endH, endM, 0, 0);
-          const checkoutDate = new Date(istDate.getTime() - istOffset);
+          const checkoutDate = toIST(); 
+          checkoutDate.setUTCHours(endH, endM, 0, 0); // Set to office end time in the IST-shifted UTC container
 
           // --- AUTO-END ONGOING BREAK (ADDED) ---
           const ongoingBreakIndex = record.breaks.findIndex(b => !b.breakEnd);

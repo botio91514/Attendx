@@ -4,6 +4,7 @@ import StatCard from '@/components/StatCard';
 import { Users, UserCheck, Palmtree, AlertTriangle, Loader2, Calendar, Clock, Activity, ClipboardList, CalendarClock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '@/lib/api';
+import { getISTToday, formatISTTime } from '@/utils/dateUtils';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } };
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -29,15 +30,12 @@ const AdminOverview: React.FC = () => {
   const fetchAdminStats = async () => {
     try {
       setLoading(true);
-      const now = new Date();
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const year = now.getFullYear().toString();
-
+      const todayStr = getISTToday();
       const [empRes, attendanceRes, holidayRes, checkinRes, leavesRes] = await Promise.all([
         api.get('/employees'),
         api.get('/attendance/admin/stats'),
         api.get('/holidays'),
-        api.get(`/attendance/admin/all?date=${now.toISOString().split('T')[0]}&limit=50`),
+        api.get(`/attendance/admin/all?date=${todayStr}&limit=50`),
         api.get('/leave/admin/all')
       ]);
 
@@ -64,7 +62,6 @@ const AdminOverview: React.FC = () => {
             .slice(0, 5);
          pendingLeavesCount = allLeaves.filter((l: any) => l.status === 'pending').length;
          // Count employees on approved leave today
-         const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
          onLeaveTodayCount = allLeaves.filter((l: any) => {
            if (l.status !== 'approved') return false;
            const start = l.startDate?.split('T')[0];
@@ -77,7 +74,7 @@ const AdminOverview: React.FC = () => {
       let isHoliday = false;
       let holidayTitle = '';
       if (holidayRes.success && Array.isArray(holidayRes.data)) {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getISTToday();
         const todayHoliday = holidayRes.data.find((h: any) => h.date.split('T')[0] === today);
         if (todayHoliday) {
           isHoliday = true;
@@ -208,7 +205,7 @@ const AdminOverview: React.FC = () => {
                            </div>
                         </div>
                         <div className="text-right">
-                           <p className="text-sm font-mono font-bold text-foreground">{new Date(record.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                           <p className="text-sm font-mono font-bold text-foreground">{formatISTTime(record.checkIn)}</p>
                            <span className={`status-${record.status} text-[9px] uppercase tracking-tighter mt-1`}>{record.status}</span>
                         </div>
                      </div>
@@ -249,7 +246,7 @@ const AdminOverview: React.FC = () => {
                         </div>
                         <div className="text-right flex items-center gap-2">
                            <span className="text-[10px] font-mono text-muted-foreground hidden sm:block">
-                             {new Date(leave.startDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                             {new Date(leave.startDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' })}
                            </span>
                            <a href="/admin/leaves" className="text-xs font-bold bg-primary shadow-lg shadow-primary/20 text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-all active:scale-95 cursor-pointer inline-block">Review</a>
                         </div>

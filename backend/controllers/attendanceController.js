@@ -18,7 +18,8 @@ const { emitToAdmins } = require('../socket/socketManager.js');
 const { 
   getISTDateString, 
   getISTMinutesFromMidnight, 
-  formatISTTime 
+  formatISTTime,
+  toIST
 } = require('../utils/timeUtils');
 
 /**
@@ -76,14 +77,15 @@ const checkIn = async (req, res, next) => {
       if (totalLeave >= 1.0) statusToSet = 'leave';
     }
 
-    const attendance = await Attendance.findOneAndUpdate(
-      { userId, date: today },
-      {
-        $setOnInsert: { userId, date: today },
-        $set: { checkIn: now, status: statusToSet }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    let attendance = await Attendance.findOne({ userId, date: today });
+    if (!attendance) {
+      attendance = new Attendance({ userId, date: today, checkIn: toIST(now) });
+    } else {
+      // If record exists (e.g. absent record created by cron), update it
+      attendance.checkIn = toIST(now);
+    }
+    attendance._settings = settings;
+    await attendance.save();
 
     // Format the threshold time for the message
     const thresholdDate = new Date(now);
@@ -146,7 +148,7 @@ const checkIn = async (req, res, next) => {
       userId: req.user.id || req.user._id,
       employeeName: req.user.name,
       employeeId: req.user.employeeId,
-      checkInTime: new Date().toISOString(),
+      checkInTime: now.toISOString(),
       status: computedStatus === 'late' ? 'late' : 'present',
       department: req.user.department
     });
@@ -218,11 +220,12 @@ const checkOut = async (req, res, next) => {
     const settings = await Settings.getSettings();
 
     // Update check-out
-    attendance.checkOut = now;
+    const nowIST = toIST(now);
+    attendance.checkOut = nowIST;
 
     // --- RECALCULATE NET WORKING TIME ---
     const checkInTime = new Date(attendance.checkIn);
-    const checkOutTime = now;
+    const checkOutTime = nowIST;
     const grossMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
     
     // Total break time is the sum of all completed breaks
@@ -250,7 +253,7 @@ const checkOut = async (req, res, next) => {
           endTime: null
         })
         if (session) {
-          session.endTime = new Date()
+          session.endTime = toIST(new Date());
           session.duration = Math.floor(
             (session.endTime - session.startTime) / 1000
           )
@@ -292,7 +295,7 @@ const checkOut = async (req, res, next) => {
     emitToAdmins('attendance:checkout', {
       userId: req.user.id || req.user._id,
       employeeName: req.user.name,
-      checkOutTime: new Date().toISOString(),
+      checkOutTime: now.toISOString(),
       netWorkingMinutes: attendance.totalWorkingHours
     });
 
@@ -316,7 +319,7 @@ const startBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const today = getTodayDate();
-    const now = new Date();
+    const now = toIST(new Date());
 
     // Find today's attendance record
     const attendance = await Attendance.findOne({ userId, date: today });
@@ -375,7 +378,7 @@ const startBreak = async (req, res, next) => {
           endTime: null
         });
         if (session) {
-          session.endTime = new Date();
+          session.endTime = toIST(new Date());
           session.duration = Math.floor((session.endTime - session.startTime) / 1000);
           await session.save();
           // Use findByIdAndUpdate to bypass validation for older tasks
@@ -412,10 +415,8 @@ const startBreak = async (req, res, next) => {
 const endBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const today = getTodayDate();
-    const now = new Date();
-
-    // Find today's attendance record
+    const now = toIST(new Date());
+    const today = getISTDateString();
     const attendance = await Attendance.findOne({ userId, date: today });
 
     if (!attendance || !attendance.checkIn) {
@@ -467,7 +468,7 @@ const endBreak = async (req, res, next) => {
         await WorkSession.create({
           taskId: lastPausedTask._id,
           userId: req.user._id,
-          startTime: new Date()
+          startTime: toIST()
         });
 
         await Task.findByIdAndUpdate(lastPausedTask._id, { $set: { status: "in-progress" } });
@@ -598,8 +599,13 @@ const getAttendanceHistory = async (req, res, next) => {
     }
 
     // 1. Get real attendance records
-    const attendanceRecords = await Attendance.find(query).sort({ date: 1 });
-    let finalAttendance = attendanceRecords.map(a => a.toObject());
+    const attendanceRecords = await Attendance.find(query)
+      .sort({ date: -1 });
+
+    const finalAttendance = attendanceRecords.map(a => ({
+      ...a.toObject(),
+      breakdownString: a.getBreakdownString()
+    }));
     const todayStr = getTodayDate();
 
     // 2. Inject Approved Leaves (The "Virtual" Records)
@@ -618,7 +624,7 @@ const getAttendanceHistory = async (req, res, next) => {
         while (current <= leaveEnd) {
           // 🛠️ Skip Sundays from leave counting (User Rule)
           if (current.getDay() !== 0) {
-            const dateStr = current.toISOString().split('T')[0];
+            const dateStr = getISTDateString(current);
             const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
             
             if (dateStr <= todayStr) {
@@ -651,7 +657,7 @@ const getAttendanceHistory = async (req, res, next) => {
       });
 
       holidays.forEach(holiday => {
-        const dateStr = holiday.date.toISOString().split('T')[0];
+        const dateStr = getISTDateString(holiday.date);
         const hasAttendanceOrLeave = finalAttendance.some(a => a.date.startsWith(dateStr));
         
         if (!hasAttendanceOrLeave && dateStr <= todayStr) {
@@ -669,9 +675,13 @@ const getAttendanceHistory = async (req, res, next) => {
     // 4. 🚀 Auto-Inject Sundays as Holidays (New Feature)
     if (startD && endD) {
       let current = new Date(startD);
-      while (current <= endD) {
+      current.setHours(0, 0, 0, 0);
+      const limitDate = new Date(endD);
+      limitDate.setHours(23, 59, 59, 999);
+
+      while (current <= limitDate) {
         if (current.getDay() === 0) { // Sunday
-          const dateStr = current.toISOString().split('T')[0];
+          const dateStr = getISTDateString(current);
           const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
           
           if (!hasRecord && dateStr <= todayStr) {
@@ -691,10 +701,12 @@ const getAttendanceHistory = async (req, res, next) => {
     // 5. 🧩 Smart Gap Filling (Mark missing working days as Absent)
     if (startD && endD) {
       let current = new Date(startD);
-      const lastCheckDate = new Date(Math.min(endD, new Date(todayStr))); // Don't mark future days as absent
+      current.setHours(0, 0, 0, 0);
+      const lastCheckDate = new Date(Math.min(endD, new Date(todayStr))); 
+      lastCheckDate.setHours(23, 59, 59, 999);
       
       while (current <= lastCheckDate) {
-        const dateStr = current.toISOString().split('T')[0];
+        const dateStr = getISTDateString(current);
         const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
         
         // If no record exists yet (no check-in, no leave, no holiday, no Sunday)
@@ -785,30 +797,14 @@ const getAllAttendance = async (req, res, next) => {
       const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
       const pendingLeave = leaves.find(l => l.userId.toString() === emp._id.toString());
       
-      // Mirror Layer Logic: Source of truth is record.leaveMeta
-      const hasMeta = record && record.leaveMeta;
-      const totalLeave = hasMeta ? (record.leaveMeta.cl + record.leaveMeta.sl + record.leaveMeta.rl + record.leaveMeta.lwp) : 0;
-
-      // 🛡️ SYNC RULE: Full leave implies status 'leave' regardless of activity
-      if (totalLeave >= 1.0) {
+      if (record) {
+        const recordObj = record.toObject();
         return {
-          userId: emp,
-          date: targetDate,
-          status: 'leave',
-          leaveType: record.leaveMeta.cl > 0 ? 'casual' : (record.leaveMeta.sl > 0 ? 'sick' : 'religious'),
-          isVirtual: !record.checkIn,
-          ...record?.toObject()
-        };
-      }
-
-      // If work activity exists
-      if (record && record.checkIn) {
-        return {
-          ...record.toObject(),
+          ...recordObj,
           userId: emp,
           activeTask,
-          hasLeaveComponent: totalLeave > 0,
-          pendingLeave: !!pendingLeave
+          pendingLeave: !!pendingLeave,
+          breakdownString: record.getBreakdownString()
         };
       }
 
@@ -818,6 +814,7 @@ const getAllAttendance = async (req, res, next) => {
         date: targetDate,
         status: 'absent',
         isVirtual: true,
+        pendingLeave: !!pendingLeave,
         breaks: []
       };
     });
@@ -887,7 +884,7 @@ const processComprehensiveAttendance = async (from, to, employees, settings) => 
   for (const emp of employees) {
     let current = new Date(startD);
     while (current <= endD) {
-      const dateStr = current.toISOString().split('T')[0];
+      const dateStr = getISTDateString(current);
       if (dateStr > todayStr) {
         current.setDate(current.getDate() + 1);
         continue; // Don't report future dates
@@ -901,6 +898,9 @@ const processComprehensiveAttendance = async (from, to, employees, settings) => 
       );
 
       if (attendance) {
+        if (emp.name.toLowerCase().includes('dipak')) {
+          console.log(`[DEBUG] Dipak Record ${dateStr}: status=${attendance.status}, in=${attendance.checkIn}, out=${attendance.checkOut}`);
+        }
         combinedRecords.push({
           ...attendance,
           userId: emp
@@ -924,7 +924,7 @@ const processComprehensiveAttendance = async (from, to, employees, settings) => 
           });
         } else {
           // Check for Holiday
-          const holiday = holidays.find(h => h.date.toISOString().split('T')[0] === dateStr);
+          const holiday = holidays.find(h => getISTDateString(h.date) === dateStr);
           const isSunday = current.getDay() === 0;
           const isWorkingDay = settings.workingDays.includes(current.getDay());
 
@@ -1067,9 +1067,9 @@ const getTodayStats = async (req, res, next) => {
     stats.notCheckedIn = totalEmployees - stats.checkedInCount;
 
     // 🛠️ Use IST day-of-week (fixes UTC server returning wrong day)
-    const nowIST = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+    const now = toIST(new Date());
     const settings = await Settings.getSettings();
-    const todayDay = nowIST.getUTCDay(); // 0=Sun,1=Mon...6=Sat in IST
+    const todayDay = now.getUTCDay(); // 0=Sun,1=Mon...6=Sat in IST
     const isWorkingDay = settings.workingDays.includes(todayDay);
 
     // Absent = (Those who didn't check in) - (Those on official leave)

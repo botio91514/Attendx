@@ -5,6 +5,7 @@ import { useClock } from '@/hooks/useClock';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { getSocket } from '@/lib/socket';
+import { getISTToday, formatISTTime } from '@/utils/dateUtils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -13,7 +14,7 @@ const LiveAttendance: React.FC = () => {
   const [search, setSearch] = useState('');
   const [dept, setDept] = useState('All');
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getISTToday());
   const [records, setRecords] = useState<any[]>([]);
 
   const fetchLiveAttendance = async () => {
@@ -103,13 +104,35 @@ const LiveAttendance: React.FC = () => {
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
 
+  const getDetailedStatus = (row: any) => {
+    const meta = row.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+    const totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
+    const work = row.workFraction || 0;
+
+    if (row.status === 'leave' && totalLeave >= 1.0) {
+      const type = meta.cl > 0 ? 'CL' : (meta.sl > 0 ? 'SL' : (meta.rl > 0 ? 'RL' : 'LWP'));
+      return `Full Leave (${type})`;
+    }
+
+    if (row.status === 'half-day') {
+      const leaveType = meta.cl > 0 ? 'CL' : (meta.sl > 0 ? 'SL' : (meta.rl > 0 ? 'RL' : (meta.lwp > 0 ? 'LWP' : null)));
+      if (work > 0 && leaveType) {
+        return `${work} Work + ${totalLeave} ${leaveType}`;
+      }
+      if (leaveType) return `${totalLeave} ${leaveType} Leave`;
+      return `${work} Work Session`;
+    }
+
+    return null;
+  };
+
   return (
     <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.1 } } }} className="space-y-6">
       <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-display font-bold text-foreground">Live Attendance</h2>
           <span className="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-1 rounded">
-            {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            {new Date(selectedDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -189,11 +212,11 @@ const LiveAttendance: React.FC = () => {
                       </td>
                       <td className="px-5 py-4 text-sm text-muted-foreground font-medium">{row.userId?.department}</td>
                       <td className="px-5 py-4 text-sm font-mono text-foreground">
-                        {row.checkIn ? new Date(row.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                        {row.checkIn ? formatISTTime(row.checkIn) : 
                          row.status === 'leave' ? <span className="text-[10px] italic">ON LEAVE</span> : '--:--'}
                       </td>
                       <td className="px-5 py-4 text-sm font-mono text-foreground">
-                        {row.checkOut ? new Date(row.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        {row.checkOut ? formatISTTime(row.checkOut) : '--:--'}
                       </td>
                       <td className="px-5 py-4 text-sm font-mono text-muted-foreground">
                         {row.totalBreakTime || 0} min
@@ -201,13 +224,15 @@ const LiveAttendance: React.FC = () => {
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-1">
                         <span className={getStatusBadge(row.status)}>{row.status}</span>
-                        {row.pendingLeave && (
-                          <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <span className="animate-pulse">⚠️</span> Pending {row.leaveType || 'Leave'}
+                        {row.breakdownString && (
+                          <span className="text-[9px] font-bold text-muted-foreground/70 pl-1">
+                            {row.breakdownString}
                           </span>
                         )}
-                        {!row.pendingLeave && row.leaveType && (
-                          <span className="text-[9px] uppercase font-bold text-muted-foreground/60 pl-1">{row.leaveType}</span>
+                        {row.pendingLeave && (
+                          <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 mt-1">
+                            <span className="animate-pulse">⚠️</span> Pending Leave
+                          </span>
                         )}
                       </div>
                     </td>

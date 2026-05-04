@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { getISTToday, formatISTTime } from '@/utils/dateUtils';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
@@ -31,7 +32,7 @@ const AdminBreakHistory: React.FC = () => {
   const [policyLimit, setPolicyLimit] = useState(60);
 
   const [filters, setFilters] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: getISTToday(),
     employeeId: '',
     exceededOnly: false
   });
@@ -52,7 +53,8 @@ const AdminBreakHistory: React.FC = () => {
         // Calculate basic stats for display
         const total = res.data.breaks.length;
         const active = res.data.breaks.filter((b: any) => b.break.isOnBreak).length;
-        const exceeded = res.data.breaks.filter((b: any) => b.break.exceededPolicy).length;
+        const currentLimit = res.data.policyLimit || policyLimit;
+        const exceeded = res.data.breaks.filter((b: any) => b.break.durationMinutes > currentLimit).length;
         const completed = res.data.breaks.filter((b: any) => !b.break.isOnBreak);
         const avg = completed.length > 0
           ? completed.reduce((acc: number, curr: any) => acc + (curr.break.durationMinutes || 0), 0) / completed.length
@@ -89,7 +91,7 @@ const AdminBreakHistory: React.FC = () => {
         </span>
       );
     }
-    if (b.break.exceededPolicy) {
+    if (b.break.durationMinutes > policyLimit) {
       return (
         <span className="status-badge bg-destructive/10 text-destructive border border-destructive/20">
           ⚠️ Exceeded
@@ -132,7 +134,9 @@ const AdminBreakHistory: React.FC = () => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {activeBreaks.map((b, i) => {
-              const elapsed = Math.floor((new Date().getTime() - new Date(b.break.startTime).getTime()) / 60000);
+              const nowIST = new Date().getTime() + (5.5 * 60 * 60 * 1000);
+              const startTime = new Date(b.break.startTime).getTime();
+              const elapsed = Math.floor((nowIST - startTime) / 60000);
               const exceeded = elapsed > policyLimit;
               return (
                 <motion.div
@@ -226,17 +230,17 @@ const AdminBreakHistory: React.FC = () => {
                       </td>
                       <td className="px-5 py-4 text-xs font-semibold text-muted-foreground">{row.userId?.department || '--'}</td>
                       <td className="px-5 py-4 text-xs font-mono text-foreground">
-                        {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatISTTime(b.startTime)}
                       </td>
                       <td className="px-5 py-4 text-xs font-mono text-foreground">
-                        {b.isOnBreak ? <span className="text-warning">On Break 🔴</span> : b.endTime ? new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
+                        {b.isOnBreak ? <span className="text-warning">On Break 🔴</span> : b.endTime ? formatISTTime(b.endTime) : '--'}
                       </td>
                       <td className="px-5 py-4 text-sm font-mono font-bold text-primary">
                         {b.isOnBreak ? '--' : `${b.durationMinutes}m`}
                       </td>
                       <td className="px-5 py-4">{getStatusBadge(row)}</td>
                       <td className="px-5 py-4">
-                        {b.exceededPolicy && (
+                        {b.durationMinutes > policyLimit && (
                           <span className="text-xs font-bold text-destructive font-mono">
                             +{b.durationMinutes - policyLimit}m
                           </span>

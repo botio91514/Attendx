@@ -32,7 +32,8 @@ const LeavesPage: React.FC = () => {
     type: 'casual',
     startDate: '',
     endDate: '',
-    reason: ''
+    reason: '',
+    isHalfDay: false // new flag for half‑day leave
   });
 
   const fetchData = async () => {
@@ -77,17 +78,23 @@ const LeavesPage: React.FC = () => {
     e.preventDefault();
     try {
       setSubmitLoading(true);
+      if (formData.isHalfDay && formData.type === 'sick') {
+        toast.error('Half‑day not allowed for Sick Leave');
+        setSubmitLoading(false);
+        return;
+      }
       const res = await api.post('/leave/apply', {
         leaveType: formData.type,
         startDate: formData.startDate,
         endDate: formData.endDate,
-        reason: formData.reason
+        reason: formData.reason,
+        isHalfDay: formData.isHalfDay,
       });
       if (res.success) {
         toast.success(res.message);
         setDrawerOpen(false);
         fetchData();
-        setFormData({ type: 'casual', startDate: '', endDate: '', reason: '' });
+        setFormData({ type: 'casual', startDate: '', endDate: '', reason: '', isHalfDay: false });
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to submit application');
@@ -243,7 +250,10 @@ const LeavesPage: React.FC = () => {
                                  }`}>
                                     {leave.leaveType?.charAt(0)}
                                  </div>
-                                 <span className="text-xs font-bold text-foreground capitalize">{leave.leaveType}</span>
+                                  <div className="flex flex-col">
+                                     <span className="text-xs font-bold text-foreground capitalize">{leave.leaveType}</span>
+                                     {leave.isHalfDay && <span className="text-[8px] bg-amber-500/10 text-amber-500 px-1 rounded uppercase font-bold w-fit mt-0.5">Half Day</span>}
+                                  </div>
                               </div>
                            </td>
                            <td className="px-5 py-5">
@@ -356,7 +366,19 @@ const LeavesPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1 leading-none">From Date</label>
-                    <input type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} className="input-floating rounded-2xl py-4 bg-secondary/30 font-bold border-transparent" required />
+                    <input type="date" value={formData.startDate} onChange={e => setFormData(prev => ({ ...prev, startDate: e.target.value, endDate: prev.isHalfDay ? e.target.value : prev.endDate }))} className="input-floating rounded-2xl py-4 bg-secondary/30 font-bold border-transparent" required />
+                     <div className="flex items-center space-x-2 mt-2">
+                       <input type="checkbox" id="halfDay" checked={formData.isHalfDay} onChange={e => {
+                         const checked = e.target.checked;
+                         setFormData(prev => ({
+                           ...prev,
+                           isHalfDay: checked,
+                           // sync end date when half day selected
+                           endDate: checked ? prev.startDate : prev.endDate,
+                         }));
+                       }} disabled={formData.type === 'sick'} className="w-4 h-4 text-primary rounded" />
+                       <label htmlFor="halfDay" className="text-xs font-medium text-muted-foreground">Half Day</label>
+                     </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1 leading-none">To Date</label>
@@ -381,10 +403,14 @@ const LeavesPage: React.FC = () => {
                         
                         // Simple working day count (simplified frontend version)
                         let count = 0;
-                        let curr = new Date(start);
-                        while(curr <= end) {
-                          if (curr.getDay() !== 0) count++; // Not Sunday
-                          curr.setDate(curr.getDate() + 1);
+                        if (formData.isHalfDay) {
+                          count = 0.5;
+                        } else {
+                          let curr = new Date(start);
+                          while(curr <= end) {
+                            if (curr.getDay() !== 0) count++; // Not Sunday
+                            curr.setDate(curr.getDate() + 1);
+                          }
                         }
 
                         // Project distribution based on Strict Policy
