@@ -218,7 +218,7 @@ const approveLeave = async (req, res, next) => {
         $set: { 
           status: 'approved',
           reviewedBy: adminId,
-          reviewedAt: new Date()
+          reviewedAt: getCurrentISTTime()
         } 
       },
       { new: true }
@@ -338,7 +338,7 @@ const rejectLeave = async (req, res, next) => {
     leave.status = 'rejected';
     leave.adminComment = adminComment;
     leave.reviewedBy = adminId;
-    leave.reviewedAt = toIST();
+    leave.reviewedAt = getCurrentISTTime();
     await leave.save();
 
     await AuditLog.create({

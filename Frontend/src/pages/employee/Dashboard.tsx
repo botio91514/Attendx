@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StatCard from '@/components/StatCard';
-import { useClock, useElapsedTime } from '@/hooks/useClock';
+import { useClock, useWorkingTimer } from '@/hooks/useClock';
 import { getStatusColor } from '@/utils/statusUtils';
 import {
   CheckCircle2, Clock, CalendarDays, Palmtree, Play, Pause,
@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import BreakTimer from '@/components/BreakTimer';
-import { getISTToday, formatISTTime, formatISTDate } from '@/utils/dateUtils';
+import { getISTToday, formatISTTime, formatISTDate, parseDBDate } from '@/utils/dateUtils';
 
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } };
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
@@ -42,15 +42,15 @@ const EmployeeDashboard: React.FC = () => {
     holiday: null as string | null
   });
   const [upcomingHolidays, setUpcomingHolidays] = useState<any[]>([]);
-  const [totalBreakMinutes, setTotalBreakMinutes] = useState(0);
+  const [todayAttendance, setTodayAttendance] = useState<any>(null);
 
   const [officeSettings, setOfficeSettings] = useState<any>(null);
 
   const [breakStatus, setBreakStatus] = useState<any>(null);
-  const elapsed = useElapsedTime(
+  const { elapsed: workingTime } = useWorkingTimer(
     checkInTime, 
-    [totalBreakMinutes], 
-    breakStatus?.isOnBreak || status === 'break',
+    todayAttendance?.breaks || [], 
+    status === 'break', 
     breakStatus?.breakStartTime
   );
 
@@ -104,7 +104,7 @@ const EmployeeDashboard: React.FC = () => {
           } else {
             setStatus('working');
           }
-          setCheckInTime(new Date(attendance.checkIn));
+          setCheckInTime(parseDBDate(attendance.checkIn));
         } else if (attendance.checkOut) {
           setStatus('completed');
           setCheckInTime(null);
@@ -145,10 +145,6 @@ const EmployeeDashboard: React.FC = () => {
         }));
       }
       
-      // Update cumulative break minutes for the timer (new system)
-      if (todayRes.success && todayRes.data?.attendance) {
-        setTotalBreakMinutes(todayRes.data.attendance.totalBreakTime || 0);
-      }
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     } finally {
@@ -299,7 +295,7 @@ const EmployeeDashboard: React.FC = () => {
             'text-success'
           }
         />
-        <StatCard icon={<Clock />} label="Net Working Time" value={status !== 'idle' ? elapsed : '00:00:00'} subtitle={status === 'working' ? 'Tracking live' : status === 'break' ? 'Paused (Break)' : 'Standby'} accentClass="text-primary" />
+        <StatCard icon={<Clock />} label="Net Working Time" value={status !== 'idle' ? workingTime : '00:00:00'} subtitle={status === 'working' ? 'Tracking live' : status === 'break' ? 'Paused (Break)' : 'Standby'} accentClass="text-primary" />
         <StatCard icon={<CalendarDays />} label="Monthly Presence" value={stats.daysPresent} subtitle="Active workdays" accentClass="text-foreground" />
         <StatCard icon={<Palmtree />} label="Leave Credits" value={stats.leaveBalance} subtitle="1.0d monthly limit applies" accentClass="text-warning" />
       </motion.div>
@@ -333,7 +329,7 @@ const EmployeeDashboard: React.FC = () => {
                   {status === 'idle' ? 'STANDBY MODE' : status === 'working' ? 'CURRENTLY WORKING' : status === 'completed' ? 'SHIFT COMPLETED' : 'ON BREAK'}
                 </span>
                 {status !== 'idle' && status !== 'completed' && (
-                  <p className="text-3xl font-mono font-bold text-primary">{elapsed}</p>
+                  <p className="text-3xl font-mono font-bold text-primary">{workingTime}</p>
                 )}
               </div>
 

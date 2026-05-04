@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { parseDBDate } from '@/utils/dateUtils';
 
 export const useClock = () => {
   const [now, setNow] = useState(new Date());
@@ -13,52 +14,77 @@ export const useClock = () => {
   return { now, timeString, dateString };
 };
 
-export const useElapsedTime = (startTime: Date | null, breaks: any[] = [], isOnBreak: boolean = false, breakStartTime: string | null = null) => {
+/**
+ * 🚀 Centralized Working Timer Hook
+ * Eliminates the 00:00:00 / 5.5-hour drift bug by using parseDBDate
+ * Subtracts break time automatically if provided
+ */
+export const useWorkingTimer = (
+  checkInTime: string | Date | null, 
+  breaks: any[] = [], 
+  isOnBreak: boolean = false, 
+  breakStartTime: string | null = null
+) => {
   const [elapsed, setElapsed] = useState('00:00:00');
+  const [totalSeconds, setTotalSeconds] = useState(0);
 
   useEffect(() => {
-    if (!startTime) {
+    if (!checkInTime) {
       setElapsed('00:00:00');
+      setTotalSeconds(0);
       return;
     }
 
-    const calculateSnapshot = () => {
+    const calculate = () => {
       const now = new Date();
       
-      // Calculate raw elapsed since check-in
-      let totalElapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+      // 🛡️ Step 1: Parse check-in safely (Ignore 'Z' to treat as Local Wall-Clock)
+      const start = parseDBDate(checkInTime);
+      if (!start) return;
 
-      // Handle active break pausing (Fix: freeze the timer completely)
-      if (isOnBreak) {
-        // Use provided start time, or fallback to current 'now' (freeze point)
-        const freezeDate = breakStartTime ? new Date(breakStartTime) : now;
-        totalElapsedSeconds = Math.floor((freezeDate.getTime() - startTime.getTime()) / 1000);
+      // 🛡️ Step 2: Calculate Gross Elapsed Time
+      let grossSeconds = Math.floor((now.getTime() - start.getTime()) / 1000);
+
+      // 🛡️ Step 3: Handle active break (Freeze timer at break start)
+      if (isOnBreak && breakStartTime) {
+        const breakStart = parseDBDate(breakStartTime);
+        if (breakStart) {
+          grossSeconds = Math.floor((breakStart.getTime() - start.getTime()) / 1000);
+        }
       }
 
-      // Calculate total duration of all COMPLETED breaks inside the breaks array
-      let completedBreakSeconds = 0;
+      // 🛡️ Step 4: Deduct completed breaks
+      let breakSeconds = 0;
       breaks.forEach(b => {
-         // Handle both old array format and simple total minutes if passed
-         if (typeof b === 'number') {
-           completedBreakSeconds += (b * 60);
-         } else if (b.breakStart && b.breakEnd) {
-           completedBreakSeconds += Math.floor((new Date(b.breakEnd).getTime() - new Date(b.breakStart).getTime()) / 1000);
-         }
+        if (typeof b === 'number') {
+          breakSeconds += (b * 60);
+        } else if (b.breakStart && b.breakEnd) {
+          const s = parseDBDate(b.breakStart);
+          const e = parseDBDate(b.breakEnd);
+          if (s && e) {
+            breakSeconds += Math.floor((e.getTime() - s.getTime()) / 1000);
+          }
+        }
       });
 
-      const netWorkingSeconds = Math.max(0, totalElapsedSeconds - completedBreakSeconds);
-      
-      const h = String(Math.floor(netWorkingSeconds / 3600)).padStart(2, '0');
-      const m = String(Math.floor((netWorkingSeconds % 3600) / 60)).padStart(2, '0');
-      const s = String(netWorkingSeconds % 60).padStart(2, '0');
+      const netSeconds = Math.max(0, grossSeconds - breakSeconds);
+      setTotalSeconds(netSeconds);
+
+      // 🛡️ Step 5: Format to HH:mm:ss
+      const h = String(Math.floor(netSeconds / 3600)).padStart(2, '0');
+      const m = String(Math.floor((netSeconds % 3600) / 60)).padStart(2, '0');
+      const s = String(netSeconds % 60).padStart(2, '0');
       
       setElapsed(`${h}:${m}:${s}`);
     };
 
-    calculateSnapshot();
-    const id = setInterval(calculateSnapshot, 1000);
+    calculate();
+    const id = setInterval(calculate, 1000);
     return () => clearInterval(id);
-  }, [startTime, breaks, isOnBreak, breakStartTime]);
+  }, [checkInTime, breaks, isOnBreak, breakStartTime]);
 
-  return elapsed;
+  return { elapsed, totalSeconds };
 };
+
+// Legacy alias for compatibility
+export const useElapsedTime = useWorkingTimer;

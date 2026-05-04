@@ -335,7 +335,7 @@ const updatePayroll = async (req, res, next) => {
     if (paymentMethod) payroll.paymentMethod = paymentMethod;
 
     if (status === 'paid' && !payroll.paidAt) {
-      payroll.paidAt = new Date();
+      payroll.paidAt = getCurrentISTTime();
     }
 
     // Recalculate net: (Gross + Bonus) - Deductions
@@ -406,7 +406,7 @@ const bulkPay = async (req, res, next) => {
       { 
         $set: { 
           status: 'paid', 
-          paidAt: toIST() 
+          paidAt: getCurrentISTTime() 
         } 
       }
     );

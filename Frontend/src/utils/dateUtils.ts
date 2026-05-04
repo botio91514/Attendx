@@ -10,7 +10,17 @@ export const IST_OFFSET = 5.5 * 60 * 60 * 1000;
  */
 export const getISTNow = () => {
   const now = new Date();
-  return new Date(now.getTime() + IST_OFFSET);
+  return now; // Frontend 'Now' is already the correct local wall-clock
+};
+
+/**
+ * Converts a DB "IST-as-UTC" string into a proper Local Date object for calculations
+ */
+export const parseDBDate = (dateStr: string | Date | null) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  // Strip 'Z' to force browser to treat it as Local Time (Wall-clock)
+  return new Date(dateStr.replace('Z', ''));
 };
 
 /**
@@ -32,11 +42,23 @@ export const formatISTDate = (date: Date = new Date()) => {
 
 /**
  * Formats a date to HH:mm AM/PM in IST
+ * @param date - Can be a shifted Date object (from DB) or a raw Date object
+ * @param isAlreadyShifted - Set to true if the date is already "IST-as-UTC" (Default: true)
  */
-export const formatISTTime = (date: string | Date | null) => {
+export const formatISTTime = (date: string | Date | null, isAlreadyShifted: boolean = true) => {
   if (!date) return '—';
-  const d = typeof date === 'string' ? new Date(date) : date;
+  let d = typeof date === 'string' ? new Date(date) : date;
   
+  if (!isAlreadyShifted) {
+    // 🔥 IDEMPOTENT PROTECTION:
+    // If the hour is already >= 7, it's likely already shifted for this DB.
+    // We only shift if it's in the raw UTC morning range (< 7).
+    const currentUTCHours = d.getUTCHours();
+    if (currentUTCHours < 7) {
+      d = new Date(d.getTime() + IST_OFFSET);
+    }
+  }
+
   // Explicitly extract UTC components to bypass any browser timezone shifting
   let hours = d.getUTCHours();
   const minutes = d.getUTCMinutes();
@@ -46,6 +68,13 @@ export const formatISTTime = (date: string | Date | null) => {
   const strMinutes = minutes < 10 ? '0' + minutes : minutes;
   
   return `${hours}:${strMinutes} ${ampm}`;
+};
+
+/**
+ * Specifically for raw UTC dates (like from new Date() or socket timestamps that haven't been shifted)
+ */
+export const formatRawDateToISTTime = (date: string | Date | null) => {
+  return formatISTTime(date, false);
 };
 
 /**

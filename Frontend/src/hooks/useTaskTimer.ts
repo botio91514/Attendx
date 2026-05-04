@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { Task } from "../lib/taskApi"
+import { parseDBDate } from "../utils/dateUtils"
 
 /**
  * Helper: formatSeconds(seconds: number): string
@@ -25,12 +26,14 @@ export const useTaskTimer = (task: Task, activeSessionStartTime?: string) => {
       return
     }
 
-    const startTime = new Date(activeSessionStartTime).getTime()
+    const start = parseDBDate(activeSessionStartTime)
+    if (!start) return;
+    const startTime = start.getTime()
     
     const tick = () => {
       const now = Date.now()
       const diff = Math.floor((now - startTime) / 1000)
-      setElapsed(task.totalTime + diff)
+      setElapsed(task.totalTime + (diff > 0 ? diff : 0))
     }
 
     tick() // Initial tick

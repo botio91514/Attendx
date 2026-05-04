@@ -19,6 +19,7 @@ const {
   getISTDateString, 
   getISTMinutesFromMidnight, 
   formatISTTime,
+  getCurrentISTTime,
   toIST
 } = require('../utils/timeUtils');
 
@@ -31,7 +32,7 @@ const checkIn = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const today = getISTDateString();
-    const now = new Date();
+    const now = getCurrentISTTime();
 
     // Fetch dynamic settings
     const settings = await Settings.getSettings();
@@ -79,7 +80,7 @@ const checkIn = async (req, res, next) => {
 
     let attendance = await Attendance.findOne({ userId, date: today });
     if (!attendance) {
-      attendance = new Attendance({ userId, date: today, checkIn: toIST(now) });
+      attendance = new Attendance({ userId, date: today, checkIn: now });
     } else {
       // If record exists (e.g. absent record created by cron), update it
       attendance.checkIn = toIST(now);
@@ -87,10 +88,8 @@ const checkIn = async (req, res, next) => {
     attendance._settings = settings;
     await attendance.save();
 
-    // Format the threshold time for the message
-    const thresholdDate = new Date(now);
-    thresholdDate.setHours(startH, startM + grace, 0, 0);
-    const thresholdTimeStr = thresholdDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    // Format the threshold time for the message (IST display)
+    const thresholdTimeStr = `${String(startH).padStart(2, '0')}:${String(startM + grace).padStart(2, '0')} AM`;
 
     res.status(200).json({
       success: true,
@@ -118,7 +117,7 @@ const checkIn = async (req, res, next) => {
         subject: '⏰ Attendance Alert: Late Arrival Logged',
         html: lateArrivalTemplate({
           employeeName: req.user.name,
-          checkInTime: now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          checkInTime: formatISTTime(now),
           officeStartTime: settings?.officeStartTime || '09:15',
           minutesLate
         })
@@ -126,7 +125,7 @@ const checkIn = async (req, res, next) => {
     }
     // --- END EMAIL NOTIFICATION ---
 
-    const formattedTime = formatISTTime(now);
+    const formattedTime = getCurrentISTTime();
 
     // Fire-and-forget admin notifications after responding
     const admins = await User.find({ role: 'admin' });
@@ -136,7 +135,7 @@ const checkIn = async (req, res, next) => {
         sender: userId,
         type: 'check_in',
         title: attendance.status === 'late' ? 'Late Check-in' : 'New Check-in',
-        message: `${req.user.name} checked in at ${formattedTime} (${attendance.status.toUpperCase()})`,
+        message: `${req.user.name} checked in at ${formatISTTime(now)} (${attendance.status.toUpperCase()})`,
         link: '/admin/live',
         targetRole: 'admin'
       }));
@@ -148,7 +147,7 @@ const checkIn = async (req, res, next) => {
       userId: req.user.id || req.user._id,
       employeeName: req.user.name,
       employeeId: req.user.employeeId,
-      checkInTime: now.toISOString(),
+      checkInTime: formatISTTime(now),
       status: computedStatus === 'late' ? 'late' : 'present',
       department: req.user.department
     });
@@ -173,8 +172,8 @@ const checkIn = async (req, res, next) => {
 const checkOut = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const today = getTodayDate();
-    const now = new Date();
+    const today = getISTDateString();
+    const now = getCurrentISTTime();
 
     // Find today's attendance record
     const attendance = await Attendance.findOne({ userId, date: today });
@@ -207,7 +206,7 @@ const checkOut = async (req, res, next) => {
     // Handle the current ongoing break in the breaks array
     const ongoingBreakIndex = attendance.breaks.findIndex(b => !b.breakEnd);
     if (ongoingBreakIndex !== -1) {
-      const autoBreakEnd = new Date();
+      const autoBreakEnd = getCurrentISTTime();
       const breakStart = attendance.breaks[ongoingBreakIndex].breakStart;
       const duration = Math.floor((autoBreakEnd - new Date(breakStart)) / (1000 * 60));
       
@@ -220,12 +219,11 @@ const checkOut = async (req, res, next) => {
     const settings = await Settings.getSettings();
 
     // Update check-out
-    const nowIST = toIST(now);
-    attendance.checkOut = nowIST;
+    attendance.checkOut = now;
 
     // --- RECALCULATE NET WORKING TIME ---
     const checkInTime = new Date(attendance.checkIn);
-    const checkOutTime = nowIST;
+    const checkOutTime = now;
     const grossMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
     
     // Total break time is the sum of all completed breaks
@@ -253,7 +251,7 @@ const checkOut = async (req, res, next) => {
           endTime: null
         })
         if (session) {
-          session.endTime = toIST(new Date());
+          session.endTime = getCurrentISTTime();
           session.duration = Math.floor(
             (session.endTime - session.startTime) / 1000
           )
@@ -295,7 +293,7 @@ const checkOut = async (req, res, next) => {
     emitToAdmins('attendance:checkout', {
       userId: req.user.id || req.user._id,
       employeeName: req.user.name,
-      checkOutTime: now.toISOString(),
+      checkOutTime: formatISTTime(now),
       netWorkingMinutes: attendance.totalWorkingHours
     });
 
@@ -318,8 +316,8 @@ const checkOut = async (req, res, next) => {
 const startBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const today = getTodayDate();
-    const now = toIST(new Date());
+    const today = getISTDateString();
+    const now = getCurrentISTTime();
 
     // Find today's attendance record
     const attendance = await Attendance.findOne({ userId, date: today });
@@ -500,8 +498,26 @@ const getTodayAttendance = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const today = getTodayDate();
+    const isSunday = new Date(today).getUTCDay() === 0;
 
     const attendance = await Attendance.findOne({ userId, date: today });
+
+    // If it's Sunday, we ALWAYS return holiday status, regardless of record
+    if (isSunday) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          attendance: {
+            ...(attendance ? attendance.toObject() : {}),
+            id: attendance?._id,
+            status: 'holiday',
+            title: 'Sunday (Weekly Off)'
+          },
+          message: 'Today is Sunday, your weekly off.',
+        },
+        message: 'Weekly Off',
+      });
+    }
 
     if (!attendance) {
       // 🏆 Check if today is a Holiday
@@ -521,19 +537,6 @@ const getTodayAttendance = async (req, res, next) => {
             message: `Today is a public holiday: ${holiday.title}`,
           },
           message: 'Public Holiday',
-        });
-      }
-
-      // 🏆 Check if today is Sunday
-      const isSunday = new Date(today).getDay() === 0;
-      if (isSunday) {
-        return res.status(200).json({
-          success: true,
-          data: {
-            attendance: { status: 'holiday', title: 'Sunday (Weekly Off)' },
-            message: 'Today is Sunday, your weekly off.',
-          },
-          message: 'Weekly Off',
         });
       }
 
@@ -628,21 +631,31 @@ const getAttendanceHistory = async (req, res, next) => {
             const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
             
             if (dateStr <= todayStr) {
-               const leaveData = {
+              if (existingIndex !== -1) {
+                // 🛡️ MERGE: Add leave info to existing record instead of overwriting
+                const record = finalAttendance[existingIndex];
+                
+                // Only update status to 'leave' if they didn't work at all
+                if (!record.checkIn && record.workFraction === 0) {
+                  record.status = 'leave';
+                }
+                record.leaveType = leave.leaveType;
+                record.isOnLeave = true;
+                
+                // Recalculate breakdown string with merged data
+                if (record.getBreakdownString) {
+                  record.breakdownString = record.getBreakdownString();
+                }
+              } else {
+                // No record at all, inject a new one
+                finalAttendance.push({
                   userId,
                   date: dateStr,
                   status: 'leave',
                   leaveType: leave.leaveType,
                   isVirtual: true
-                };
-
-                if (existingIndex !== -1) {
-                  // Override any existing record (present/late/absent) with 'leave' status
-                  finalAttendance[existingIndex] = leaveData;
-                } else {
-                  // No record at all, inject a new one
-                  finalAttendance.push(leaveData);
-                }
+                });
+              }
             }
           }
           current.setDate(current.getDate() + 1);
@@ -658,16 +671,25 @@ const getAttendanceHistory = async (req, res, next) => {
 
       holidays.forEach(holiday => {
         const dateStr = getISTDateString(holiday.date);
-        const hasAttendanceOrLeave = finalAttendance.some(a => a.date.startsWith(dateStr));
+        const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
         
-        if (!hasAttendanceOrLeave && dateStr <= todayStr) {
-          finalAttendance.push({
-            userId,
-            date: dateStr,
-            status: 'holiday',
-            title: holiday.title,
-            isVirtual: true
-          });
+        if (dateStr <= todayStr) {
+          if (existingIndex !== -1) {
+            const record = finalAttendance[existingIndex];
+            // If it's a holiday and they didn't work AND not on leave, mark as holiday
+            if (!record.checkIn && record.status !== 'leave') {
+              record.status = 'holiday';
+              record.title = holiday.title;
+            }
+          } else {
+            finalAttendance.push({
+              userId,
+              date: dateStr,
+              status: 'holiday',
+              title: holiday.title,
+              isVirtual: true
+            });
+          }
         }
       });
     }
@@ -682,16 +704,25 @@ const getAttendanceHistory = async (req, res, next) => {
       while (current <= limitDate) {
         if (current.getDay() === 0) { // Sunday
           const dateStr = getISTDateString(current);
-          const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
+          const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
           
-          if (!hasRecord && dateStr <= todayStr) {
-            finalAttendance.push({
-              userId,
-              date: dateStr,
-              status: 'holiday',
-              title: 'Sunday',
-              isVirtual: true
-            });
+          if (dateStr <= todayStr) {
+            if (existingIndex !== -1) {
+              // 🛡️ FORCE: Ensure existing Sunday record is marked as holiday if they didn't work and not on leave
+              const record = finalAttendance[existingIndex];
+              if (!record.checkIn && record.status !== 'leave') {
+                record.status = 'holiday';
+                record.title = 'Sunday';
+              }
+            } else {
+              finalAttendance.push({
+                userId,
+                date: dateStr,
+                status: 'holiday',
+                title: 'Sunday',
+                isVirtual: true
+              });
+            }
           }
         }
         current.setDate(current.getDate() + 1);
@@ -723,11 +754,32 @@ const getAttendanceHistory = async (req, res, next) => {
       }
     }
 
-    // Sort by date descending for history view
-    finalAttendance.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // 6. 🏆 Final Polish: Strict Filter, Deduplicate & Sort
+    let filteredRecords = finalAttendance;
+    if (month && year) {
+      const { startStr, endStr } = getMonthRange(parseInt(year), parseInt(month));
+      filteredRecords = filteredRecords.filter(a => {
+        const dStr = a.date.split('T')[0];
+        return dStr >= startStr && dStr <= endStr;
+      });
+    }
+
+    // Deduplicate by date (priority to real records over virtual)
+    const recordMap = new Map();
+    filteredRecords.forEach(rec => {
+      const dStr = rec.date.split('T')[0];
+      const existing = recordMap.get(dStr);
+      // Prefer real records (id exists) or records with checkIn
+      if (!existing || (!existing._id && rec._id) || (rec.checkIn && !existing.checkIn)) {
+        recordMap.set(dStr, rec);
+      }
+    });
+
+    const uniqueAttendance = Array.from(recordMap.values());
+    uniqueAttendance.sort((a, b) => b.date.localeCompare(a.date));
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const paginatedAttendance = finalAttendance.slice(skip, skip + parseInt(limit));
+    const paginatedAttendance = uniqueAttendance.slice(skip, skip + parseInt(limit));
 
     res.status(200).json({
       success: true,
@@ -736,8 +788,8 @@ const getAttendanceHistory = async (req, res, next) => {
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: finalAttendance.length,
-          pages: Math.ceil(finalAttendance.length / parseInt(limit)),
+          total: uniqueAttendance.length,
+          pages: Math.ceil(uniqueAttendance.length / parseInt(limit)),
         },
       },
       message: 'Attendance history retrieved',

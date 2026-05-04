@@ -4,6 +4,7 @@ import { Coffee, Play, Square, Loader2, AlertTriangle, CheckCircle2, Clock } fro
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
+import { parseDBDate } from '@/utils/dateUtils';
 
 interface BreakStatus {
   hasCheckedIn: boolean;
@@ -30,7 +31,7 @@ const BreakTimer: React.FC<BreakTimerProps> = ({ onStatusChange }) => {
 
   // Helper: calculate elapsed seconds from a start time string
   const calcElapsed = (startTimeStr: string) => {
-    const start = new Date(startTimeStr).getTime();
+    const start = parseDBDate(startTimeStr)!.getTime();
     const now = Date.now();
     return Math.max(0, Math.floor((now - start) / 1000));
   };

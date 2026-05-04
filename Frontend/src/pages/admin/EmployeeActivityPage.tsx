@@ -20,7 +20,9 @@ import {
   Edit3,
   TimerReset
 } from "lucide-react"
-import { format, differenceInSeconds } from "date-fns"
+import { parseDBDate } from "@/utils/dateUtils"
+import { useWorkingTimer } from "@/hooks/useClock"
+import { format } from "date-fns"
 import { toast } from "sonner"
 import { 
   getEmployeeActivity, 
@@ -53,26 +55,8 @@ import { cn } from "@/lib/utils"
 
 // Live Timer Component for individual sessions
 const LiveTimer = ({ startTime }: { startTime: string }) => {
-  const [seconds, setSeconds] = useState(0)
-
-  useEffect(() => {
-    const update = () => {
-      const diff = differenceInSeconds(new Date(), new Date(startTime))
-      setSeconds(diff > 0 ? diff : 0)
-    }
-    update()
-    const interval = setInterval(update, 1000)
-    return () => clearInterval(interval)
-  }, [startTime])
-
-  const formatTime = (s: number) => {
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
-    const sec = s % 60
-    return `${h > 0 ? `${h}h ` : ""}${m}m ${sec}s`
-  }
-
-  return <span>{formatTime(seconds)}</span>
+  const { elapsed } = useWorkingTimer(startTime);
+  return <span className="font-mono text-emerald-600 font-bold">{elapsed}</span>;
 }
 
 export const EmployeeActivityPage: React.FC = () => {

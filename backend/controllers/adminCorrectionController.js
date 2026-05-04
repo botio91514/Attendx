@@ -3,7 +3,7 @@ const Task = require('../models/Task');
 const WorkSession = require('../models/WorkSession');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
-const { toIST, parseISTToShiftedDate } = require('../utils/timeUtils');
+const { toIST, parseISTToShiftedDate, getCurrentISTTime } = require('../utils/timeUtils');
 
 /**
  * @desc    Upsert attendance record for an employee (Manual Admin Override)
@@ -42,7 +42,7 @@ exports.overrideAttendance = async (req, res, next) => {
     
     if (breaks) {
       attendance.breaks = breaks.map(b => ({
-        breakStart: b.breakStart ? toIST(b.breakStart) : toIST(new Date()),
+        breakStart: b.breakStart ? toIST(b.breakStart) : getCurrentISTTime(),
         breakEnd: b.breakEnd ? toIST(b.breakEnd) : null,
         duration: (b.breakStart && b.breakEnd) 
           ? Math.floor((new Date(b.breakEnd) - new Date(b.breakStart)) / (1000 * 60)) 
@@ -101,8 +101,8 @@ exports.overrideTask = async (req, res, next) => {
       await WorkSession.create({
         taskId,
         userId: task.assignedTo,
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
+        startTime: parseISTToShiftedDate(startTime),
+        endTime: parseISTToShiftedDate(endTime),
         duration
       });
 

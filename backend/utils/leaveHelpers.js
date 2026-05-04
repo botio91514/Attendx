@@ -98,11 +98,17 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
 };
 
 const getDatesBetween = (startDate, endDate) => {
+  const { getISTDateString } = require('./timeUtils');
   const dates = [];
   let curr = new Date(startDate);
-  while (curr <= endDate) {
-    dates.push(curr.toISOString().split('T')[0]);
-    curr.setDate(curr.getDate() + 1);
+  // Ensure we are working with midnight UTC to avoid T+5:30 shifting issues
+  curr.setUTCHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setUTCHours(0, 0, 0, 0);
+
+  while (curr <= end) {
+    dates.push(getISTDateString(curr));
+    curr.setUTCDate(curr.getUTCDate() + 1);
   }
   return dates;
 };

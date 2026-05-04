@@ -113,7 +113,7 @@ const emitToUser = (userId, event, data) => {
     console.log(`[SOCKET] Emitting to user ${userId}: ${event}`);
     getIO().to(userId.toString()).emit(event, {
       ...data,
-      timestamp: new Date().toISOString()
+      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
     });
   } catch (err) {
     console.error('[SOCKET] emitToUser failed:', err.message);
@@ -126,7 +126,7 @@ const emitToAdmins = (event, data) => {
     console.log(`[SOCKET] Emitting to admins: ${event}`, data);
     getIO().to('admins').emit(event, {
       ...data,
-      timestamp: new Date().toISOString()
+      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
     });
   } catch (err) {
     console.error('[SOCKET] emitToAdmins failed:', err.message);
@@ -138,7 +138,7 @@ const emitToEmployees = (event, data) => {
   try {
     getIO().to('employees').emit(event, {
       ...data,
-      timestamp: new Date().toISOString()
+      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
     });
   } catch (err) {
     console.error('Socket emit to employees failed:', err);

@@ -118,7 +118,7 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
     return { status: this.status, workFraction: this.workFraction };
   }
 
-  // 2. Calculate Work Component (Priority 1)
+  // 1. Calculate Work Component (Priority 1)
   let calculatedWorkFraction = 0;
   let isLate = false;
 
@@ -140,12 +140,11 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
     if (this.checkOut) {
       if (workingHours >= (halfDayMinutes - graceBuffer)) {
         calculatedWorkFraction = 1.0;
-      } else if (workingHours > 30) { // At least 30 mins for half day
+      } else if (workingHours >= 30) { // At least 30 mins for half day
         calculatedWorkFraction = 0.5;
       }
     } else {
       // Currently working - assume 0.5 until checkout
-      // Check if it's already a "full day" late (optional logic, but let's stick to 0.5 for now)
       calculatedWorkFraction = 0.5;
     }
   }
@@ -155,7 +154,6 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
   let totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
 
   // 4. Clamping Rule: Total (Work + Leave) ≤ 1.0
-  // Leave is only counted for the "gap" left by work
   const maxAllowedLeave = 1.0 - calculatedWorkFraction;
   const effectiveLeave = Math.min(totalLeave, maxAllowedLeave);
 
@@ -169,10 +167,19 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
     } else if (effectiveLeave >= 1.0) {
       finalStatus = 'leave';
     } else {
-      finalStatus = 'present'; // Combined full day
+      finalStatus = 'present'; // Combined full day (Work + Leave)
     }
   } else if (totalCredit >= 0.5) {
     finalStatus = 'half-day';
+  } else if (this.checkIn) {
+    // 🛡️ SECURITY FALLBACK: If there's a check-in, status must NEVER be absent
+    finalStatus = isLate ? 'late' : 'present';
+  } else {
+    // 🛡️ SUNDAY FALLBACK: Only if no work and no leave
+    const recordDate = new Date(this.date);
+    if (recordDate.getUTCDay() === 0) {
+      finalStatus = 'holiday';
+    }
   }
 
   return { status: finalStatus, workFraction: calculatedWorkFraction };
@@ -185,14 +192,23 @@ attendanceSchema.methods.getBreakdownString = function () {
 
   const components = [];
 
-  if (work > 0) components.push(`${work} Work`);
+  if (work > 0) {
+    components.push(`${work} Work`);
+  } else if (this.checkIn) {
+    // If they checked in but haven't earned fraction yet
+    components.push(`Work Started`);
+  }
 
   if (meta.cl > 0) components.push(`${meta.cl} CL`);
   if (meta.sl > 0) components.push(`${meta.sl} SL`);
   if (meta.rl > 0) components.push(`${meta.rl} RL`);
   if (meta.lwp > 0) components.push(`${meta.lwp} LWP`);
 
-  if (components.length === 0) return 'Absent';
+  if (components.length === 0) {
+    // Return status if it's special, otherwise 'Absent'
+    if (['holiday', 'leave'].includes(this.status)) return '';
+    return 'Absent';
+  }
   return components.join(' + ');
 };
 

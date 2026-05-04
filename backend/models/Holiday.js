@@ -34,17 +34,13 @@ const holidaySchema = new mongoose.Schema(
 
 // Statics to check if a specific date is a holiday
 holidaySchema.statics.isHoliday = async function (date) {
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-  
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
+  // We assume 'date' is a YYYY-MM-DD string or an IST-shifted Date object
+  // To check if a day is a holiday, we just need to compare the YYYY-MM-DD string
+  const { getISTDateString } = require('../utils/timeUtils');
+  const dateStr = getISTDateString(date);
 
   const holiday = await this.findOne({
-    date: {
-      $gte: startOfDay,
-      $lte: endOfDay,
-    },
+    date: new Date(dateStr) // MongoDB stores YYYY-MM-DD as T00:00:00Z
   });
 
   return !!holiday;
