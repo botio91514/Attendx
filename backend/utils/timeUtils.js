@@ -31,11 +31,13 @@ const toIST = (date) => {
   if (!date) return getCurrentISTTime();
   const d = new Date(date);
   
-  // Idempotency check:
-  // If the hour is > 7, it's highly likely it's already shifted for this DB.
-  // Morning check-ins (9am-12pm IST) are 3:30am-6:30am UTC (Raw) or 9am-12pm UTC (Shifted).
-  if (d.getUTCHours() >= 7) return d;
-  
+  // Only shift if the date represents a UTC time that hasn't been "IST-shifted" yet.
+  // We use the same environment-aware logic as getCurrentISTTime.
+  const isLocalIST = new Date().getTimezoneOffset() === -330;
+  if (isLocalIST) return d;
+
+  // Note: We only add offset if the date is a 'fresh' UTC date. 
+  // For safety in this specific architecture, we assume toIST is called on unshifted dates.
   return new Date(d.getTime() + IST_OFFSET);
 };
 

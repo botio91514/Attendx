@@ -19,8 +19,16 @@ export const getISTNow = () => {
 export const parseDBDate = (dateStr: string | Date | null) => {
   if (!dateStr) return null;
   if (dateStr instanceof Date) return dateStr;
-  // Strip 'Z' to force browser to treat it as Local Time (Wall-clock)
-  return new Date(dateStr.replace('Z', ''));
+  
+  // 🔥 CRITICAL FIX: Our DB stores "IST-as-UTC" (e.g., 09:30 AM IST is saved as 09:30 AM UTC).
+  // We must explicitly tell the browser to treat this time as IST (+05:30) 
+  // to prevent it from using the local browser timezone which causes timer drifts.
+  const cleanStr = dateStr.replace('Z', '');
+  // If the string already has an offset, don't double-add it
+  if (cleanStr.includes('+') || cleanStr.includes('-')) {
+    return new Date(cleanStr);
+  }
+  return new Date(cleanStr + '+05:30');
 };
 
 /**

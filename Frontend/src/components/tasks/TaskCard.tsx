@@ -31,6 +31,7 @@ import {
 } from "@/lib/taskApi"
 import { useTaskTimer } from "@/hooks/useTaskTimer"
 import { cn } from "@/lib/utils"
+import { formatISTTime } from "@/utils/dateUtils"
 
 interface TaskCardProps {
   task: Task
@@ -143,7 +144,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </span>
             {task.status === "completed" && task.completedAt && (
               <span className="ml-auto text-[10px] text-slate-400 font-medium">
-                Done: {format(new Date(task.completedAt), "dd MMM, hh:mm a")}
+                Done: {formatISTTime(task.completedAt)}
               </span>
             )}
           </div>
