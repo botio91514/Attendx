@@ -50,11 +50,8 @@ const AttendancePage: React.FC = () => {
 
   const getSummary = () => {
     let p = 0, a = 0, la = 0, le = 0, h = 0, hd = 0;
-    
     attendance.forEach(row => {
-      const isSunday = new Date(row.date).getDay() === 0;
-      // Use the same priority logic as the UI
-      const finalStatus = row.status === 'leave' ? 'leave' : isSunday ? 'holiday' : (row.status || 'absent');
+      const finalStatus = row.status || 'absent';
       
       if (finalStatus === 'present') p++;
       else if (finalStatus === 'absent') a++;
@@ -125,35 +122,33 @@ const AttendancePage: React.FC = () => {
       let bgClass = "bg-secondary/10 border-glass-border/30";
       let IconNode = null;
 
-      // Primary Logic: Leave takes highest priority, followed by Sunday/Holiday
-      if (record?.status === 'leave') { 
+      // Use status directly from backend
+      const status = record?.status || (isSunday ? 'holiday' : 'absent');
+
+      if (status === 'leave') { 
         bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]"; 
         IconNode = <Palmtree className="w-10 h-10 text-indigo-500/20 absolute inset-0 m-auto pointer-events-none" />; 
       }
-      else if (isSunday) {
+      else if (status === 'holiday') {
         bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]";
         IconNode = <span className="absolute inset-0 m-auto flex items-center justify-center opacity-20 pointer-events-none text-4xl">⭐</span>;
       }
       else if (record) {
-        if (record.status === 'present') { 
+        if (status === 'present') { 
           bgClass = "bg-success/10 border-success/30 shadow-[inset_0_0_20px_rgba(var(--success),0.05)]"; 
           IconNode = <CheckCircle2 className="w-8 h-8 text-success/20 absolute inset-0 m-auto pointer-events-none" />; 
         }
-        else if (record.status === 'absent') { 
+        else if (status === 'absent') { 
           bgClass = "bg-destructive/10 border-destructive/30 shadow-[inset_0_0_20px_rgba(var(--destructive),0.05)]"; 
           IconNode = <XCircle className="w-8 h-8 text-destructive/20 absolute inset-0 m-auto pointer-events-none" />; 
         }
-        else if (record.status === 'late') { 
+        else if (status === 'late') { 
           bgClass = "bg-warning/10 border-warning/30 shadow-[inset_0_0_20px_rgba(var(--warning),0.05)]"; 
           IconNode = <Clock className="w-8 h-8 text-warning/20 absolute inset-0 m-auto pointer-events-none" />; 
         }
-        else if (record.status === 'half-day') { 
+        else if (status === 'half-day') { 
           bgClass = "bg-primary/10 border-primary/30 shadow-[inset_0_0_20px_rgba(var(--primary),0.05)]"; 
           IconNode = <CheckCircle2 className="w-8 h-8 text-primary/20 absolute inset-0 m-auto pointer-events-none" />; 
-        }
-        else if (record.status === 'holiday') {
-          bgClass = "bg-indigo-500/10 border-indigo-500/30 shadow-[inset_0_0_20px_rgba(var(--indigo-500),0.05)]";
-          IconNode = <span className="absolute inset-0 m-auto flex items-center justify-center opacity-20 pointer-events-none text-4xl">⭐</span>;
         }
       }
 
@@ -167,18 +162,14 @@ const AttendancePage: React.FC = () => {
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 z-10 w-fit max-w-full">
               {/* Detailed Status Label */}
               <div className="flex flex-col gap-0.5">
-                <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md w-fit truncate ${record?.status === 'leave' ? 'bg-indigo-500/40 text-white' : isSunday ? 'bg-indigo-500/40 text-white' : record?.status === 'present' ? 'bg-success/20 text-success' : record?.status === 'absent' ? 'bg-destructive/20 text-destructive' : record?.status === 'late' ? 'bg-warning/20 text-warning' : 'bg-primary/20 text-primary'}`}>
-                  {record?.status === 'leave' ? (record?.leaveType || 'LEAVE') : 
-                   isSunday && !record?.checkIn ? 'Holiday' : 
-                   (record?.status || 'Absent')}
+                <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md w-fit truncate ${status === 'leave' || status === 'holiday' ? 'bg-indigo-500/40 text-white' : status === 'present' ? 'bg-success/20 text-success' : status === 'absent' ? 'bg-destructive/20 text-destructive' : status === 'late' ? 'bg-warning/20 text-warning' : 'bg-primary/20 text-primary'}`}>
+                  {record?.breakdownString || status}
                 </span>
                 
-                {/* Credit Value (1, 0.5, 0) */}
-                {!isSunday && (
+                {/* Credit Value from Backend */}
+                {status !== 'holiday' && (
                   <span className="text-[8px] font-bold text-foreground/40 pl-1 uppercase tracking-tighter">
-                    Value: {record?.status === 'present' || record?.status === 'late' ? '1.0' : 
-                            record?.status === 'half-day' ? '0.5' : 
-                            record?.status === 'leave' ? '0.0 (On Leave)' : '0.0'}
+                    Value: {record?.workFraction?.toFixed(1) || '0.0'}
                   </span>
                 )}
               </div>
@@ -344,10 +335,10 @@ const AttendancePage: React.FC = () => {
                   <tr><td colSpan={7} className="px-4 py-16"><EmptyState /></td></tr>
                 ) : (
                   attendance.map((row, i) => {
-                    const isSunday = new Date(row.date).getDay() === 0;
-                    const displayStatus = row.status === 'leave' ? (row.leaveType || 'LEAVE') : 
-                                         isSunday && !row.checkIn ? 'Holiday' : 
-                                         (row.status || 'Absent');
+                    const dateObj = new Date(row.date);
+                    const isSunday = dateObj.getDay() === 0;
+                    const status = row.status || (isSunday ? 'holiday' : 'absent');
+                    const displayStatus = row.breakdownString || status;
                     
                     return (
                       <tr key={i} className="border-b border-glass-border hover:bg-secondary/30 transition-colors">
@@ -358,7 +349,7 @@ const AttendancePage: React.FC = () => {
                         <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
                         <td className="px-4 py-4">
-                          <span className={`${getStatusColor(isSunday ? 'holiday' : row.status)} px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider`}>
+                          <span className={`${getStatusColor(status)} px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider`}>
                             {displayStatus}
                           </span>
                         </td>

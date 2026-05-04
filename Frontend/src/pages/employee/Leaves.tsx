@@ -50,7 +50,7 @@ const LeavesPage: React.FC = () => {
       if (balanceRes.success && balanceRes.data && balanceRes.data.balance) {
         const b = balanceRes.data.balance;
         const balanceArray = [
-          { type: 'Casual', id: 'casual', total: b.casual?.total ?? 12, accrued: b.casual?.accrued ?? 0, remaining: b.casual?.available ?? 0, used: b.casual?.used ?? 0, monthlyLimit: b.casual?.monthlyLimit ?? 1, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
+          { type: 'Casual', id: 'casual', total: b.casual?.total ?? 12, accrued: b.casual?.accrued ?? 0, remaining: b.casual?.available ?? 0, used: b.casual?.used ?? 0, monthlyLimit: 0, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
           { type: 'Sick', id: 'sick', total: b.sick?.total ?? 6, accrued: b.sick?.accrued ?? 0, remaining: b.sick?.available ?? 0, used: b.sick?.used ?? 0, monthlyLimit: 6, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
           { type: 'Religious', id: 'religious', total: b.religious?.total ?? 2, accrued: b.religious?.accrued ?? 0, remaining: b.religious?.available ?? 0, used: b.religious?.used ?? 0, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
           { type: 'LWP', id: 'unpaid', total: 'Unlimited', accrued: '∞', remaining: '∞', used: b.unpaid?.used ?? 0, icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
@@ -192,12 +192,14 @@ const LeavesPage: React.FC = () => {
                     />
                  </div>
                  
-                 <div className="flex justify-between items-center text-[9px] font-bold text-muted-foreground uppercase">
+                  <div className="flex justify-between items-center text-[9px] font-bold text-muted-foreground uppercase">
                     <span>Yearly Cap: {lb.total}</span>
-                    <span className="text-primary/70 italic">
-                       {lb.monthlyLimit ? `Limit: ${lb.monthlyLimit}d/mo` : 'Auto-Accrue'}
-                    </span>
-                 </div>
+                    {lb.monthlyLimit > 0 && (
+                      <span className="text-primary/70 italic">
+                        Limit: {lb.monthlyLimit}d/mo
+                      </span>
+                    )}
+                  </div>
               </div>
            </div>
         ))}
@@ -298,9 +300,9 @@ const LeavesPage: React.FC = () => {
             <div className="p-6 rounded-3xl bg-primary shadow-xl shadow-primary/20 text-primary-foreground relative overflow-hidden group">
                <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500" />
                <Calendar className="w-8 h-8 mb-4 opacity-80" />
-               <h4 className="text-lg font-bold mb-2 font-display">Strict Leave Policy</h4>
+               <h4 className="text-lg font-bold mb-2 font-display">Accrual Leave Policy</h4>
                <p className="text-xs opacity-70 leading-relaxed mb-6">
-                 Limits: **1.0 Casual Leave** per month & **6.0 Sick Leave** per year. Excess days are automatically converted to LWP.
+                 Earn **1.0 Casual Leave** per month. Unused leaves carry forward within the year. Excess days convert to LWP.
                </p>
                <div className="space-y-3">
                   <div className="flex justify-between items-center text-[10px] font-bold uppercase border-t border-white/10 pt-3">
@@ -415,7 +417,7 @@ const LeavesPage: React.FC = () => {
 
                         // Project distribution based on Strict Policy
                         const balanceObj = balances.find(b => b.id === (formData.type === 'unpaid' ? 'unpaid' : formData.type));
-                        const monthlyLimit = balanceObj?.monthlyLimit || (formData.type === 'casual' ? 1 : formData.type === 'sick' ? 6 : 99);
+                        const monthlyLimit = balanceObj?.monthlyLimit || (formData.type === 'sick' ? 6 : 99);
                         const yearlyRemaining = Number(balanceObj?.remaining || 0);
 
                         let paid = 0;
@@ -424,10 +426,8 @@ const LeavesPage: React.FC = () => {
                         if (formData.type === 'unpaid') {
                           lwp = count;
                         } else {
-                          // Max paid is the minimum of (requested days, monthly limit, and yearly remaining)
-                          // Note: This is an estimate as we don't know this month's prior usage here
-                          const limitToUse = Math.min(monthlyLimit, yearlyRemaining);
-                          paid = Math.min(count, limitToUse);
+                          // Max paid is the minimum of requested days and yearly remaining
+                          paid = Math.min(count, yearlyRemaining);
                           lwp = Math.max(0, count - paid);
                         }
 

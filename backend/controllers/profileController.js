@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { sendEmail } = require('../utils/emailService');
 const { profileUpdatedByAdminTemplate } = require('../utils/emailTemplates');
+const { toIST } = require('../utils/timeUtils');
 
 /**
  * Helper: Mask Account Number
@@ -212,9 +213,9 @@ const getEmployeeProfile = async (req, res, next) => {
     }
 
     // Attendance Summary (Current Month)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const now = toIST(new Date());
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
     
     // String comparison since Attendance.date is YYYY-MM-DD String
     const startOfMonth = `${year}-${month}-01`;
@@ -288,7 +289,8 @@ const updateEmployeeProfile = async (req, res, next) => {
 
     // Notify employee via email
     if (updatedFields.length > 0 && user.email) {
-      const updatedAtIST = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const { formatISTTime, getCurrentISTTime } = require('../utils/timeUtils');
+      const updatedAtIST = formatISTTime(getCurrentISTTime());
       sendEmail({
         to: user.email,
         subject: '📝 Your Profile Has Been Updated',

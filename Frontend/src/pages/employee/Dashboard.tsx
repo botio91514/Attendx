@@ -297,7 +297,7 @@ const EmployeeDashboard: React.FC = () => {
         />
         <StatCard icon={<Clock />} label="Net Working Time" value={status !== 'idle' ? workingTime : '00:00:00'} subtitle={status === 'working' ? 'Tracking live' : status === 'break' ? 'Paused (Break)' : 'Standby'} accentClass="text-primary" />
         <StatCard icon={<CalendarDays />} label="Monthly Presence" value={stats.daysPresent} subtitle="Active workdays" accentClass="text-foreground" />
-        <StatCard icon={<Palmtree />} label="Leave Credits" value={stats.leaveBalance} subtitle="1.0d monthly limit applies" accentClass="text-warning" />
+        <StatCard icon={<Palmtree />} label="Leave Credits" value={stats.leaveBalance} subtitle="Monthly accrual applies" accentClass="text-warning" />
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

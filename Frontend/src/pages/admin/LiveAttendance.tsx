@@ -104,27 +104,6 @@ const LiveAttendance: React.FC = () => {
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
 
-  const getDetailedStatus = (row: any) => {
-    const meta = row.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
-    const totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
-    const work = row.workFraction || 0;
-
-    if (row.status === 'leave' && totalLeave >= 1.0) {
-      const type = meta.cl > 0 ? 'CL' : (meta.sl > 0 ? 'SL' : (meta.rl > 0 ? 'RL' : 'LWP'));
-      return `Full Leave (${type})`;
-    }
-
-    if (row.status === 'half-day') {
-      const leaveType = meta.cl > 0 ? 'CL' : (meta.sl > 0 ? 'SL' : (meta.rl > 0 ? 'RL' : (meta.lwp > 0 ? 'LWP' : null)));
-      if (work > 0 && leaveType) {
-        return `${work} Work + ${totalLeave} ${leaveType}`;
-      }
-      if (leaveType) return `${totalLeave} ${leaveType} Leave`;
-      return `${work} Work Session`;
-    }
-
-    return null;
-  };
 
   return (
     <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.1 } } }} className="space-y-6">

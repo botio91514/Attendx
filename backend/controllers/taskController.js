@@ -86,12 +86,9 @@ exports.getMyTasks = async (req, res, next) => {
     const userId = req.user._id
     const todayStr = getISTDateString()
     
-    // IST Boundaries for precise date comparison
-    const istMidnight = new Date(`${todayStr}T00:00:00Z`)
-    istMidnight.setMinutes(istMidnight.getMinutes() - 330)
-    
-    const istEndOfDay = new Date(`${todayStr}T23:59:59Z`)
-    istEndOfDay.setMinutes(istEndOfDay.getMinutes() - 330)
+    // IST Boundaries (Already IST-as-UTC in DB)
+    const istMidnight = new Date(`${todayStr}T00:00:00.000Z`)
+    const istEndOfDay = new Date(`${todayStr}T23:59:59.999Z`)
 
     const populateFields = "name employeeId profilePhoto"
 
@@ -534,14 +531,11 @@ exports.getAllTasksAdmin = async (req, res, next) => {
     const dateStr = req.query.date || getISTDateString() // "YYYY-MM-DD"
     const populateFields = "name employeeId profilePhoto"
 
-    // 1. Define the IST window in UTC (Shift UTC to match IST 00:00 to 23:59)
-    const dayStart = new Date(`${dateStr}T00:00:00Z`)
-    dayStart.setMinutes(dayStart.getMinutes() - 330) // UTC-5.5h = IST midnight
-    
+    // 1. Define the IST window (Already IST-as-UTC in DB)
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`)
     const dayEnd = new Date(`${dateStr}T23:59:59.999Z`)
-    dayEnd.setMinutes(dayEnd.getMinutes() - 330)
 
-    const now = new Date()
+    const now = getNow()
 
     // 2. Find sessions that touched this day
     const sessionsInWindow = await WorkSession.find({
@@ -626,14 +620,11 @@ exports.getEmployeeTaskReport = async (req, res, next) => {
     const { startDate, endDate } = req.query // "YYYY-MM-DD"
     const populateFields = "name employeeId profilePhoto"
 
-    // 1. Define range boundaries in UTC (shifting to catch IST 00:00 to 23:59)
-    const rangeStart = new Date(`${startDate}T00:00:00Z`)
-    rangeStart.setMinutes(rangeStart.getMinutes() - 330)
-    
+    // 1. Define range boundaries (Already IST-as-UTC in DB)
+    const rangeStart = new Date(`${startDate}T00:00:00.000Z`)
     const rangeEnd = new Date(`${endDate}T23:59:59.999Z`)
-    rangeEnd.setMinutes(rangeEnd.getMinutes() - 330)
 
-    const now = new Date()
+    const now = getNow()
 
     // 2. Find sessions for this user that overlap with the selected range
     const sessionsInRange = await WorkSession.find({
@@ -760,7 +751,7 @@ exports.getEmployeeActivity = async (req, res, next) => {
       const sStart = new Date(Math.max(new Date(session.startTime).getTime(), startOfDay.getTime()))
       const sEnd = session.endTime 
         ? new Date(Math.min(new Date(session.endTime).getTime(), endOfDay.getTime()))
-        : new Date(Math.min(new Date().getTime(), endOfDay.getTime()))
+        : new Date(Math.min(getNow().getTime(), endOfDay.getTime()))
 
       let duration = 0
       if (sEnd > sStart) {

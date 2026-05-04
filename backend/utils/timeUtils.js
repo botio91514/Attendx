@@ -11,33 +11,23 @@ const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 
 /**
  * Replace all 'new Date()' calls with this to get a consistent IST-shifted Date object.
- * @returns {Date} - Current time shifted by +5.5 hours
+ * This function is now "timezone-blind" to ensure it works on both UTC and IST servers.
+ * @returns {Date} - A Date object where UTC components match IST Wall-Clock time.
  */
 const getCurrentISTTime = () => {
   const d = new Date();
-  // Idempotency: If this server is ALREADY in IST, new Date() is local.
-  // We check the offset to ensure we only shift if the environment is NOT IST.
-  const isLocalIST = d.getTimezoneOffset() === -330;
-  if (isLocalIST) return d;
-  
+  // Get absolute UTC epoch and add 5.5 hours
   return new Date(d.getTime() + IST_OFFSET);
 };
 
 /**
- * Converts any date to an IST-shifted Date object.
- * Idempotent: Won't double-shift if the date is already in the "IST Range".
+ * Converts any date to an IST-shifted Date object (IST-as-UTC).
+ * This ensures that d.toISOString() always represents the Indian wall-clock time.
  */
 const toIST = (date) => {
   if (!date) return getCurrentISTTime();
   const d = new Date(date);
-  
-  // Only shift if the date represents a UTC time that hasn't been "IST-shifted" yet.
-  // We use the same environment-aware logic as getCurrentISTTime.
-  const isLocalIST = new Date().getTimezoneOffset() === -330;
-  if (isLocalIST) return d;
-
-  // Note: We only add offset if the date is a 'fresh' UTC date. 
-  // For safety in this specific architecture, we assume toIST is called on unshifted dates.
+  // Get absolute UTC epoch and add 5.5 hours
   return new Date(d.getTime() + IST_OFFSET);
 };
 
@@ -83,9 +73,44 @@ const getCurrentMonth = () => {
 /**
  * Safe Minutes from Midnight in IST
  */
+/**
+ * Safe Minutes from Midnight in IST
+ * Expects a Date object (either Real UTC or Virtual IST)
+ */
 const getISTMinutesFromMidnight = (date) => {
-  const d = toIST(date);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
+  if (!date) return 0;
+  const d = new Date(date);
+  
+  // Rule: If the date is far in the future compared to real Now, 
+  // it's likely already a "Virtual IST" shifted date.
+  const isAlreadyShifted = (d.getTime() - new Date().getTime()) > (2 * 60 * 60 * 1000);
+  
+  if (isAlreadyShifted) {
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }
+  
+  // Otherwise, treat as real UTC and shift
+  const ist = toIST(d);
+  return ist.getUTCHours() * 60 + ist.getUTCMinutes();
+};
+
+/**
+ * Converts a raw user-input string (e.g. "09:30") or date string from the frontend
+ * into an IST-shifted Date object for storage.
+ * Use this for Admin Overrides or any manual input.
+ */
+const parseISTToShiftedDate = (input) => {
+  if (!input) return getCurrentISTTime();
+  const date = new Date(input);
+  
+  // If the input is just a time string "HH:MM", we combine it with today's IST date
+  if (typeof input === 'string' && input.length <= 8) {
+    const today = getISTDateString();
+    return toIST(`${today}T${input}`);
+  }
+
+  // Otherwise, treat as a date/datetime and shift
+  return toIST(date);
 };
 
 module.exports = {
@@ -96,5 +121,6 @@ module.exports = {
   getCurrentYear,
   getCurrentMonth,
   getISTMinutesFromMidnight,
+  parseISTToShiftedDate,
   IST_OFFSET
 };

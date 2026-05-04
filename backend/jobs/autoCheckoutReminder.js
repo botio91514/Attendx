@@ -321,7 +321,7 @@ const runAbsentAlertCheck = async (settings, deadlineStr) => {
               endTime: null
             });
             if (session) {
-              session.endTime = new Date();
+              session.endTime = toIST(new Date());
               session.duration = Math.floor((session.endTime - session.startTime) / 1000);
               await session.save();
               

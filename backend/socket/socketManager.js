@@ -96,6 +96,8 @@ const initializeSocket = (httpServer) => {
   return io;
 };
 
+const { getCurrentISTTime } = require('../utils/timeUtils');
+
 // Get io instance (used by controllers to emit)
 const getIO = () => {
   if (!io) {
@@ -113,7 +115,7 @@ const emitToUser = (userId, event, data) => {
     console.log(`[SOCKET] Emitting to user ${userId}: ${event}`);
     getIO().to(userId.toString()).emit(event, {
       ...data,
-      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
+      timestamp: getCurrentISTTime().toISOString()
     });
   } catch (err) {
     console.error('[SOCKET] emitToUser failed:', err.message);
@@ -126,7 +128,7 @@ const emitToAdmins = (event, data) => {
     console.log(`[SOCKET] Emitting to admins: ${event}`, data);
     getIO().to('admins').emit(event, {
       ...data,
-      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
+      timestamp: getCurrentISTTime().toISOString()
     });
   } catch (err) {
     console.error('[SOCKET] emitToAdmins failed:', err.message);
@@ -138,7 +140,7 @@ const emitToEmployees = (event, data) => {
   try {
     getIO().to('employees').emit(event, {
       ...data,
-      timestamp: new Date(new Date().getTime() + 19800000).toISOString()
+      timestamp: getCurrentISTTime().toISOString()
     });
   } catch (err) {
     console.error('Socket emit to employees failed:', err);
@@ -150,7 +152,7 @@ const emitToAll = (event, data) => {
   try {
     getIO().to('all').emit(event, {
       ...data,
-      timestamp: new Date().toISOString()
+      timestamp: getCurrentISTTime().toISOString()
     });
   } catch (err) {
     console.error('Socket emit to all failed:', err);

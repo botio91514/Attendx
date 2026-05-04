@@ -64,8 +64,8 @@ const createAnnouncement = async (req, res, next) => {
     
     // --- EMAIL NOTIFICATION (ADDED) ---
     // Broadcast via Email in batches of 10
-    const istOptions = { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' };
-    const postedAtIST = new Date().toLocaleString('en-IN', istOptions);
+    const { formatISTTime } = require('../utils/timeUtils');
+    const displayTime = formatISTTime(announcement.createdAt);
 
     const emailRecipients = targetUsers.filter(u => u.role === 'employee' && u.email);
     
@@ -79,7 +79,7 @@ const createAnnouncement = async (req, res, next) => {
             noticeTitle: title,
             noticeContent: content,
             postedBy: req.user.name,
-            postedAt: postedAtIST
+            postedAt: displayTime
           })
         })
       ));
@@ -133,7 +133,7 @@ const createAnnouncement = async (req, res, next) => {
       title: title,
       content: content,
       postedBy: req.user.name,
-      postedAt: new Date().toISOString()
+      postedAt: displayTime
     });
     // --- END SOCKET EMIT ---
   } catch (error) {

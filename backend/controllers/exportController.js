@@ -16,17 +16,18 @@ const Holiday = require('../models/Holiday');
 const LeaveBalance = require('../models/LeaveBalance');
 const Payroll = require('../models/Payroll');
 const Settings = require('../models/Settings');
+const { toIST, formatISTTime } = require('../utils/timeUtils');
 const { getMonthRange, calculateStats } = require('../utils/attendanceHelpers');
 const { processComprehensiveAttendance } = require('./attendanceController');
 
 // Helper: get date range from query params
 const getDateRange = (query) => {
+  const now = toIST(new Date());
+  // now is already shifted to IST, so UTC methods will return IST components
   const from = query.from || 
-    new Date(new Date().getFullYear(), 
-      new Date().getMonth(), 1)
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
       .toISOString().split('T')[0];
-  const to = query.to || 
-    new Date().toISOString().split('T')[0];
+  const to = query.to || now.toISOString().split('T')[0];
   return { from, to };
 };
 
@@ -262,8 +263,8 @@ const exportAttendanceCSV = async (req, res) => {
         r.userId?.department || 'N/A',
         dateFormatted,
         dayName,
-        r.checkIn ? new Date(r.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : 'N/A',
-        r.checkOut ? new Date(r.checkOut).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : 'N/A',
+        r.checkIn ? formatISTTime(r.checkIn) : 'N/A',
+        r.checkOut ? formatISTTime(r.checkOut) : 'N/A',
         formatHours(r.totalWorkingHours),
         r.totalBreakTime ? `${r.totalBreakTime}m` : '0m',
         (r.status || 'N/A').toUpperCase()
@@ -287,8 +288,9 @@ const exportAttendanceCSV = async (req, res) => {
 // 6. Bulk Leave CSV
 const exportBulkLeaveCSV = async (req, res) => {
   try {
-    const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-    const to = req.query.to || new Date().toISOString().split('T')[0];
+    const now = toIST(new Date());
+    const from = req.query.from || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().split('T')[0];
+    const to = req.query.to || now.toISOString().split('T')[0];
 
     const leaves = await Leave.find({
       createdAt: { $gte: new Date(from), $lte: new Date(to + 'T23:59:59.999Z') }
@@ -332,8 +334,9 @@ const exportBulkLeaveCSV = async (req, res) => {
 // 7. Bulk Payroll CSV
 const exportBulkPayrollCSV = async (req, res) => {
   try {
-    const month = parseInt(req.query.month || new Date().getMonth() + 1);
-    const year = parseInt(req.query.year || new Date().getFullYear());
+    const now = toIST(new Date());
+    const month = parseInt(req.query.month || now.getUTCMonth() + 1);
+    const year = parseInt(req.query.year || now.getUTCFullYear());
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const monthName = monthNames[month - 1];
 

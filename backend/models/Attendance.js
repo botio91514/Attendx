@@ -111,15 +111,22 @@ attendanceSchema.methods.calculateWorkingHours = function () {
   return workingMinutes > 0 ? workingMinutes : 0;
 };
 
-// Method to determine status and work fraction based on check-in time, working hours and leaves
+// Method to determine status and work fraction based on strict rules
 attendanceSchema.methods.determineStatus = function (settings = null) {
-  // 1. Manual Override takes highest priority
+  // 1. Check Sunday First (Highest priority)
+  // recordDate is UTC midnight for YYYY-MM-DD
+  const recordDate = new Date(this.date);
+  if (recordDate.getUTCDay() === 0) {
+    return { status: 'holiday', workFraction: 0 };
+  }
+
+  // 2. Manual Override (Priority 2)
   if (this.isManualOverride || this._isManualStatus) {
     return { status: this.status, workFraction: this.workFraction };
   }
 
-  // 1. Calculate Work Component (Priority 1)
-  let calculatedWorkFraction = 0;
+  // 3. Calculate Work Potential (internal calculation)
+  let rawWorkFraction = 0;
   let isLate = false;
 
   if (this.checkIn) {
@@ -139,50 +146,42 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
 
     if (this.checkOut) {
       if (workingHours >= (halfDayMinutes - graceBuffer)) {
-        calculatedWorkFraction = 1.0;
+        rawWorkFraction = 1.0;
       } else if (workingHours >= 30) { // At least 30 mins for half day
-        calculatedWorkFraction = 0.5;
+        rawWorkFraction = 0.5;
       }
     } else {
-      // Currently working - assume 0.5 until checkout
-      calculatedWorkFraction = 0.5;
+      // Currently working - assume 1.0 (Present) until checkout
+      rawWorkFraction = 1.0;
     }
   }
 
-  // 3. Calculate Leave Component (Priority 2 - Fills remaining time)
+  // 4. Status Priority Engine
   const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
-  let totalLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0) + (meta.lwp || 0);
+  const hasLeave = (meta.cl > 0 || meta.sl > 0 || meta.rl > 0 || meta.lwp > 0);
 
-  // 4. Clamping Rule: Total (Work + Leave) ≤ 1.0
-  const maxAllowedLeave = 1.0 - calculatedWorkFraction;
-  const effectiveLeave = Math.min(totalLeave, maxAllowedLeave);
-
-  // 5. Final Status Derivation
   let finalStatus = 'absent';
-  const totalCredit = calculatedWorkFraction + effectiveLeave;
+  let finalWorkFraction = 0;
 
-  if (totalCredit >= 1.0) {
-    if (calculatedWorkFraction === 1.0) {
-      finalStatus = isLate ? 'late' : 'present';
-    } else if (effectiveLeave >= 1.0) {
-      finalStatus = 'leave';
-    } else {
-      finalStatus = 'present'; // Combined full day (Work + Leave)
-    }
-  } else if (totalCredit >= 0.5) {
-    finalStatus = 'half-day';
-  } else if (this.checkIn) {
-    // 🛡️ SECURITY FALLBACK: If there's a check-in, status must NEVER be absent
+  if (hasLeave) {
+    // 🛡️ Rule: leaveMeta exists → leave
+    finalStatus = 'leave';
+    finalWorkFraction = 0;
+  } else if (rawWorkFraction >= 1.0) {
+    // 🛡️ Rule: workFraction ≥ 1 → present/late
     finalStatus = isLate ? 'late' : 'present';
+    finalWorkFraction = 1.0;
+  } else if (rawWorkFraction >= 0.5) {
+    // 🛡️ Rule: workFraction ≥ 0.5 → half-day
+    finalStatus = 'half-day';
+    finalWorkFraction = 0.5;
   } else {
-    // 🛡️ SUNDAY FALLBACK: Only if no work and no leave
-    const recordDate = new Date(this.date);
-    if (recordDate.getUTCDay() === 0) {
-      finalStatus = 'holiday';
-    }
+    // 🛡️ Default Rule: → absent
+    finalStatus = 'absent';
+    finalWorkFraction = 0;
   }
 
-  return { status: finalStatus, workFraction: calculatedWorkFraction };
+  return { status: finalStatus, workFraction: finalWorkFraction };
 };
 
 // Method to get detailed breakdown string

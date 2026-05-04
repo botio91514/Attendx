@@ -77,20 +77,18 @@ const applyLeave = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Overlapping leave exists on these dates.' });
     }
 
-    // 4. STRICT MONTHLY & YEARLY LIMIT ENGINE
-    const monthsInvolved = [...new Set(allDates.map(d => d.slice(0, 7)))];
+    // 4. TOTAL YEARLY BALANCE ENGINE
     const currentYear = getISTDateString().slice(0, 4);
-
-    const monthlyUsed = {};
-    monthsInvolved.forEach(m => monthlyUsed[m] = { cl: 0 });
+    const yearlyUsed = { cl: 0, sl: 0, rl: 0 };
 
     existingLeaves.forEach(lv => {
       (lv.dailyBreakdown || []).forEach(day => {
-        const monthKey = day.date.slice(0, 7);
-
-        if (monthlyUsed[monthKey]) {
+        const yearKey = day.date.slice(0, 4);
+        if (yearKey === currentYear) {
           const dayVal = day.days || (lv.isHalfDay ? 0.5 : 1);
-          if (day.leaveType === 'cl') monthlyUsed[monthKey].cl += dayVal;
+          if (day.leaveType === 'cl') yearlyUsed.cl += dayVal;
+          if (day.leaveType === 'sl') yearlyUsed.sl += dayVal;
+          if (day.leaveType === 'rl') yearlyUsed.rl += dayVal;
         }
       });
     });
@@ -108,20 +106,8 @@ const applyLeave = async (req, res, next) => {
     }
 
     const totalDaysValue = isHalfDay ? 0.5 : allDates.length;
-    const yearlyUsed = { sl: 0, rl: 0 };
-    
-    // Recalculate yearly sl and rl usage
-    existingLeaves.forEach(lv => {
-      (lv.dailyBreakdown || []).forEach(day => {
-        const yearKey = day.date.slice(0, 4);
-        if (yearKey === currentYear) {
-          if (day.leaveType === 'sl') yearlyUsed.sl += (day.days || 1);
-          if (day.leaveType === 'rl') yearlyUsed.rl += (day.days || 1);
-        }
-      });
-    });
 
-    const breakdown = distributeLeave(allDates, internalKey, monthlyUsed, yearlyUsed, isHalfDay);
+    const breakdown = distributeLeave(allDates, internalKey, yearlyUsed, isHalfDay, req.user.joiningDate);
 
     if (breakdown.sl > 2 && !req.body.attachment) {
       return res.status(400).json({
@@ -443,7 +429,8 @@ const getEmployeeBalance = async (req, res, next) => {
     const year = getCurrentYear();
     let balance = await LeaveBalance.findOne({ userId, year });
     if (!balance) balance = await LeaveBalance.create({ userId, year });
-    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(), year } });
+    const user = await User.findById(userId);
+    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(user?.joiningDate), year } });
   } catch (error) { next(error); }
 };
 

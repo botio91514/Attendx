@@ -41,13 +41,17 @@ exports.overrideAttendance = async (req, res, next) => {
     if (notes) attendance.notes = notes;
     
     if (breaks) {
-      attendance.breaks = breaks.map(b => ({
-        breakStart: b.breakStart ? toIST(b.breakStart) : getCurrentISTTime(),
-        breakEnd: b.breakEnd ? toIST(b.breakEnd) : null,
-        duration: (b.breakStart && b.breakEnd) 
-          ? Math.floor((new Date(b.breakEnd) - new Date(b.breakStart)) / (1000 * 60)) 
-          : 0
-      }));
+      attendance.breaks = breaks.map(b => {
+        const start = b.breakStart ? parseISTToShiftedDate(b.breakStart) : getCurrentISTTime();
+        const end = b.breakEnd ? parseISTToShiftedDate(b.breakEnd) : null;
+        return {
+          breakStart: start,
+          breakEnd: end,
+          duration: (start && end) 
+            ? Math.floor((end - start) / (1000 * 60)) 
+            : 0
+        };
+      });
     }
 
     // Use settings for status determination
@@ -96,13 +100,15 @@ exports.overrideTask = async (req, res, next) => {
 
     if (addSession) {
       const { startTime, endTime } = addSession;
-      const duration = Math.floor((new Date(endTime) - new Date(startTime)) / 1000);
+      const parsedStart = parseISTToShiftedDate(startTime);
+      const parsedEnd = parseISTToShiftedDate(endTime);
+      const duration = Math.floor((parsedEnd - parsedStart) / 1000);
       
       await WorkSession.create({
         taskId,
         userId: task.assignedTo,
-        startTime: parseISTToShiftedDate(startTime),
-        endTime: parseISTToShiftedDate(endTime),
+        startTime: parsedStart,
+        endTime: parsedEnd,
         duration
       });
 

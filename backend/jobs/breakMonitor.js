@@ -18,7 +18,8 @@ const startBreakMonitorJob = () => {
       const today = getTodayDate();
       const settings = await Settings.getSettings();
       const allowedMinutes = settings.breakDurationMinutes || 60;
-      const now = new Date();
+      const { toIST } = require('../utils/timeUtils');
+      const now = toIST(new Date());
 
       // Find employees currently on break who haven't been alerted yet
       const activeBreaks = await Attendance.find({
@@ -40,11 +41,8 @@ const startBreakMonitorJob = () => {
 
           // 2. Send Email Alert
           if (record.userId && record.userId.email) {
-            const istTime = startTime.toLocaleTimeString('en-IN', { 
-              timeZone: 'Asia/Kolkata',
-              hour: '2-digit', 
-              minute: '2-digit' 
-            });
+            const { formatISTTime } = require('../utils/timeUtils');
+            const istTime = formatISTTime(startTime);
 
             sendEmail({
               to: record.userId.email,

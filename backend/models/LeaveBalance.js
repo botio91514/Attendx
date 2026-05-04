@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { toIST } = require('../utils/timeUtils');
 
 const leaveTypeSchema = new mongoose.Schema(
   {
@@ -33,44 +34,45 @@ leaveBalanceSchema.pre('save', function (next) {
 });
 
 leaveBalanceSchema.methods.getAccrualSummary = function (joiningDate) {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+  const { toIST } = require('../utils/timeUtils');
+  const now = toIST();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
   
   let monthsWorked = currentMonth;
   if (joiningDate) {
-    const join = new Date(joiningDate);
-    if (join.getFullYear() === currentYear) {
-      monthsWorked = Math.max(1, currentMonth - join.getMonth());
+    const join = toIST(joiningDate);
+    if (join.getUTCFullYear() === currentYear) {
+      monthsWorked = Math.max(1, currentMonth - join.getUTCMonth());
     }
   }
 
-  const clAccrued = Math.min(12, monthsWorked * 1);
-  const slAccrued = 6;
-  const rlQuota = 2;
+  const clEarned = Math.min(12, monthsWorked * 1);
+  const slTotal = this.sick.total || 6;
+  const rlTotal = this.religious.total || 2;
 
   return {
     year: this.year,
     casual: {
       total: 12,
-      accrued: clAccrued,
+      accrued: clEarned,
       used: this.casual.used,
-      available: Math.max(0, clAccrued - this.casual.used),
-      monthlyLimit: 1
+      available: Math.max(0, clEarned - this.casual.used),
+      monthlyLimit: 0
     },
     sick: {
-      total: 6,
-      accrued: slAccrued,
+      total: slTotal,
+      accrued: slTotal,
       used: this.sick.used,
-      available: Math.max(0, slAccrued - this.sick.used),
-      monthlyLimit: 6
+      available: Math.max(0, slTotal - this.sick.used),
+      monthlyLimit: 0
     },
     religious: {
-      total: 2,
-      accrued: rlQuota,
+      total: rlTotal,
+      accrued: rlTotal,
       used: this.religious.used,
-      available: Math.max(0, rlQuota - this.religious.used),
-      monthlyLimit: 2 
+      available: Math.max(0, rlTotal - this.religious.used),
+      monthlyLimit: 0
     },
     unpaid: {
       total: 'Unlimited',

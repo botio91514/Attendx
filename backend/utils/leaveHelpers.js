@@ -12,21 +12,20 @@ const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl:
 
   let monthsWorked = currentMonth;
   if (joiningDate) {
-    const join = new Date(joiningDate);
-    if (join.getFullYear() === currentYear) {
-      // If joined this year, count only from joining month to now
-      monthsWorked = Math.max(1, currentMonth - join.getMonth());
+    const join = toIST(joiningDate);
+    if (join.getUTCFullYear() === currentYear) {
+      monthsWorked = Math.max(1, currentMonth - join.getUTCMonth());
     }
   }
 
-  const clAccrued = Math.min(12, monthsWorked * 1);
-  const slAccrued = 6; // SL is 6 per year, not pro-rated monthly with 0.5
-  const rlQuota = 2;
+  const clEarned = Math.min(12, monthsWorked * 1);
+  const slTotal = balanceDoc.sick?.total || 6;
+  const rlTotal = balanceDoc.religious?.total || 2;
 
   return {
-    cl: Math.max(0, clAccrued - (balanceDoc.casual?.used || 0) - (pendingCounts.cl || 0)),
-    sl: Math.max(0, slAccrued - (balanceDoc.sick?.used || 0) - (pendingCounts.sl || 0)),
-    rl: Math.max(0, rlQuota - (balanceDoc.religious?.used || 0) - (pendingCounts.rl || 0)),
+    cl: Math.max(0, clEarned - (balanceDoc.casual?.used || 0) - (pendingCounts.cl || 0)),
+    sl: Math.max(0, slTotal - (balanceDoc.sick?.used || 0) - (pendingCounts.sl || 0)),
+    rl: Math.max(0, rlTotal - (balanceDoc.religious?.used || 0) - (pendingCounts.rl || 0)),
     lwp: 999 
   };
 };
@@ -37,28 +36,35 @@ const calculateAccrualBalance = (balanceDoc, pendingCounts = { cl: 0, sl: 0, rl:
  * SL: Max 6/year (Strict, full LWP if exceeded per day, only 1.0 allowed)
  * RL: Max 2/year (Strict, full LWP if exceeded per day)
  */
-const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = { sl: 0, rl: 0 }, isHalfDay = false) => {
+const distributeLeave = (allDates, selectedType, yearlyUsed = { cl: 0, sl: 0, rl: 0 }, isHalfDay = false, joiningDate) => {
+  const { toIST } = require('./timeUtils');
   const breakdown = { cl: 0, sl: 0, rl: 0, lwp: 0, dailyBreakdown: [] };
   const dayIncrement = isHalfDay ? 0.5 : 1;
-  const MONTHLY_LIMITS = { cl: 1 };
   const YEARLY_LIMITS = { sl: 6, rl: 2 };
 
   // Sort dates chronologically
   const sortedDates = [...allDates].sort();
 
   sortedDates.forEach(date => {
-    const monthKey = date.slice(0, 7); // "YYYY-MM"
-    if (!monthlyUsed[monthKey]) monthlyUsed[monthKey] = { cl: 0 };
-    
     let remainingToDistribute = dayIncrement;
 
+    // CL Accrual Logic: Earn 1 per month worked in the current year
+    const d = new Date(date);
+    const month = d.getUTCMonth() + 1;
+    const year = d.getUTCFullYear();
+    
+    let monthsWorked = month;
+    if (joiningDate) {
+      const join = toIST(joiningDate);
+      if (join.getUTCFullYear() === year) {
+        monthsWorked = Math.max(1, month - join.getUTCMonth());
+      }
+    }
+    const clEarnedLimit = Math.min(12, monthsWorked * 1);
+
     if (selectedType === 'sl') {
-      // SL Strict Logic: Full day only and within yearly limit
-      if (isHalfDay) {
-        // Only CL allowed for half-day. SL half-day converts to LWP.
-        breakdown.lwp += remainingToDistribute;
-        breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
-      } else if ((yearlyUsed.sl || 0) + remainingToDistribute <= YEARLY_LIMITS.sl) {
+      // SL Logic: Full day only and within yearly limit
+      if (!isHalfDay && (yearlyUsed.sl || 0) + remainingToDistribute <= YEARLY_LIMITS.sl) {
         breakdown.sl += remainingToDistribute;
         yearlyUsed.sl += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'sl', days: remainingToDistribute });
@@ -67,17 +73,17 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else if (selectedType === 'cl') {
-      // CL Strict Logic: 1/month limit
-      if ((monthlyUsed[monthKey].cl || 0) + remainingToDistribute <= MONTHLY_LIMITS.cl) {
+      // CL Logic: Total earned balance (carry forward within year)
+      if ((yearlyUsed.cl || 0) + remainingToDistribute <= clEarnedLimit) {
         breakdown.cl += remainingToDistribute;
-        monthlyUsed[monthKey].cl += remainingToDistribute;
+        yearlyUsed.cl += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'cl', days: remainingToDistribute });
       } else {
         breakdown.lwp += remainingToDistribute;
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else if (selectedType === 'rl') {
-      // RL Strict Logic: 2 per year, No half-day allowed
+      // RL Logic: Total yearly balance, No half-day allowed
       if (!isHalfDay && (yearlyUsed.rl || 0) + remainingToDistribute <= YEARLY_LIMITS.rl) {
         breakdown.rl += remainingToDistribute;
         yearlyUsed.rl += remainingToDistribute;
@@ -87,8 +93,6 @@ const distributeLeave = (allDates, selectedType, monthlyUsed = {}, yearlyUsed = 
         breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
       }
     } else {
-      // Unpaid or other (Only CL was allowed for half-day per strict policy)
-      // Even if LWP, if they applied for half-day and it wasn't CL, it goes here.
       breakdown.lwp += remainingToDistribute;
       breakdown.dailyBreakdown.push({ date, leaveType: 'lwp', days: remainingToDistribute });
     }

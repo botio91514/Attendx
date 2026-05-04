@@ -70,7 +70,8 @@ const createHoliday = async (req, res, next) => {
     // --- EMAIL NOTIFICATION (ADDED) ---
     // Notify all active employees about the new holiday
     const activeEmployees = await User.find({ role: 'employee', isActive: true });
-    const istDate = new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    const { getISTDateString } = require('../utils/timeUtils');
+    const istDate = getISTDateString(date);
 
     const broadcastHoliday = async () => {
       for (let i = 0; i < activeEmployees.length; i += 10) {

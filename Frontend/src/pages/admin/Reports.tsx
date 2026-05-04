@@ -179,7 +179,7 @@ const Reports: React.FC = () => {
           {IconNode}
           {record && (
             <div className="mt-auto flex flex-col gap-1 z-10 relative">
-              <span className={getStatusBadge(record.status)}>{record.status}</span>
+              <span className={getStatusBadge(record.status)}>{record.breakdownString || record.status}</span>
               {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {formatISTTime(record.checkIn)}</span>}
             </div>
           )}
@@ -331,7 +331,11 @@ const Reports: React.FC = () => {
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? formatISTTime(row.checkIn) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? formatISTTime(row.checkOut) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
-                        <td className="px-5 py-4"><span className={getStatusBadge(row.status)}>{row.status}</span></td>
+                        <td className="px-5 py-4">
+                          <span className={getStatusBadge(row.status)}>
+                            {row.breakdownString || row.status}
+                          </span>
+                        </td>
                         <td className="px-5 py-4 text-right">
                           <button onClick={() => { setSelectedEmp(row.userId); setViewMode('calendar'); }} className="p-2 hover:bg-primary/10 text-muted-foreground hover:text-primary rounded-lg transition-all" title="Detailed Calendar View"><Calendar className="w-4 h-4" /></button>
                         </td>

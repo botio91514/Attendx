@@ -83,7 +83,7 @@ const checkIn = async (req, res, next) => {
       attendance = new Attendance({ userId, date: today, checkIn: now });
     } else {
       // If record exists (e.g. absent record created by cron), update it
-      attendance.checkIn = toIST(now);
+      attendance.checkIn = now;
     }
     attendance._settings = settings;
     await attendance.save();
@@ -498,64 +498,15 @@ const getTodayAttendance = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const today = getTodayDate();
-    const isSunday = new Date(today).getUTCDay() === 0;
 
+    // 🛡️ Rule: Controller only returns DB data. No virtual holiday/sunday injections.
     const attendance = await Attendance.findOne({ userId, date: today });
 
-    // If it's Sunday, we ALWAYS return holiday status, regardless of record
-    if (isSunday) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          attendance: {
-            ...(attendance ? attendance.toObject() : {}),
-            id: attendance?._id,
-            status: 'holiday',
-            title: 'Sunday (Weekly Off)'
-          },
-          message: 'Today is Sunday, your weekly off.',
-        },
-        message: 'Weekly Off',
-      });
-    }
-
     if (!attendance) {
-      // 🏆 Check if today is a Holiday
-      const Holiday = require('../models/Holiday');
-      const holiday = await Holiday.findOne({ 
-        date: { 
-          $gte: new Date(today + 'T00:00:00.000Z'), 
-          $lte: new Date(today + 'T23:59:59.999Z') 
-        } 
-      });
-
-      if (holiday) {
-        return res.status(200).json({
-          success: true,
-          data: {
-            attendance: { status: 'holiday', title: holiday.title },
-            message: `Today is a public holiday: ${holiday.title}`,
-          },
-          message: 'Public Holiday',
-        });
-      }
-
-      // 🏆 Check if actually on Approved Leave today
-      const Leave = require('../models/Leave');
-      const onLeave = await Leave.findOne({
-        userId,
-        status: 'approved',
-        startDate: { $lte: today },
-        endDate: { $gte: today }
-      });
-
       return res.status(200).json({
         success: true,
-        data: {
-          attendance: onLeave ? { status: 'leave', leaveType: onLeave.leaveType } : null,
-          message: onLeave ? `You are on ${onLeave.leaveType} leave today` : 'No attendance record for today',
-        },
-        message: onLeave ? 'On Leave' : 'No record found',
+        data: { attendance: null },
+        message: 'No attendance record found for today',
       });
     }
 
@@ -572,6 +523,8 @@ const getTodayAttendance = async (req, res, next) => {
           breaks: attendance.breaks,
           status: attendance.status,
           notes: attendance.notes,
+          workFraction: attendance.workFraction,
+          leaveMeta: attendance.leaveMeta
         },
       },
       message: 'Today\'s attendance retrieved',
@@ -592,15 +545,13 @@ const getAttendanceHistory = async (req, res, next) => {
     const { month, year, page = 1, limit = 31 } = req.query;
 
     const query = { userId };
-    let startD, endD;
 
     if (month && year) {
       const { startStr, endStr } = getMonthRange(parseInt(year), parseInt(month));
       query.date = { $gte: startStr, $lte: endStr };
-      startD = new Date(startStr);
-      endD = new Date(endStr);
     }
 
+    // 🛡️ Rule: Controller only returns DB data. No virtual injections.
     // 1. Get real attendance records
     const attendanceRecords = await Attendance.find(query)
       .sort({ date: -1 });
@@ -609,177 +560,9 @@ const getAttendanceHistory = async (req, res, next) => {
       ...a.toObject(),
       breakdownString: a.getBreakdownString()
     }));
-    const todayStr = getTodayDate();
-
-    // 2. Inject Approved Leaves (The "Virtual" Records)
-    if (startD && endD) {
-      const leaves = await Leave.find({
-        userId: userId,
-        status: 'approved',
-        startDate: { $lte: endD },
-        endDate: { $gte: startD }
-      });
-
-      leaves.forEach(leave => {
-        let current = new Date(Math.max(new Date(leave.startDate), startD));
-        const leaveEnd = new Date(Math.min(new Date(leave.endDate), endD));
-
-        while (current <= leaveEnd) {
-          // 🛠️ Skip Sundays from leave counting (User Rule)
-          if (current.getDay() !== 0) {
-            const dateStr = getISTDateString(current);
-            const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
-            
-            if (dateStr <= todayStr) {
-              if (existingIndex !== -1) {
-                // 🛡️ MERGE: Add leave info to existing record instead of overwriting
-                const record = finalAttendance[existingIndex];
-                
-                // Only update status to 'leave' if they didn't work at all
-                if (!record.checkIn && record.workFraction === 0) {
-                  record.status = 'leave';
-                }
-                record.leaveType = leave.leaveType;
-                record.isOnLeave = true;
-                
-                // Recalculate breakdown string with merged data
-                if (record.getBreakdownString) {
-                  record.breakdownString = record.getBreakdownString();
-                }
-              } else {
-                // No record at all, inject a new one
-                finalAttendance.push({
-                  userId,
-                  date: dateStr,
-                  status: 'leave',
-                  leaveType: leave.leaveType,
-                  isVirtual: true
-                });
-              }
-            }
-          }
-          current.setDate(current.getDate() + 1);
-        }
-      });
-    }
-
-    // 3. Inject Holidays (The "Public" Records)
-    if (startD && endD) {
-      const holidays = await Holiday.find({
-        date: { $gte: startD, $lte: endD }
-      });
-
-      holidays.forEach(holiday => {
-        const dateStr = getISTDateString(holiday.date);
-        const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
-        
-        if (dateStr <= todayStr) {
-          if (existingIndex !== -1) {
-            const record = finalAttendance[existingIndex];
-            // If it's a holiday and they didn't work AND not on leave, mark as holiday
-            if (!record.checkIn && record.status !== 'leave') {
-              record.status = 'holiday';
-              record.title = holiday.title;
-            }
-          } else {
-            finalAttendance.push({
-              userId,
-              date: dateStr,
-              status: 'holiday',
-              title: holiday.title,
-              isVirtual: true
-            });
-          }
-        }
-      });
-    }
-
-    // 4. 🚀 Auto-Inject Sundays as Holidays (New Feature)
-    if (startD && endD) {
-      let current = new Date(startD);
-      current.setHours(0, 0, 0, 0);
-      const limitDate = new Date(endD);
-      limitDate.setHours(23, 59, 59, 999);
-
-      while (current <= limitDate) {
-        if (current.getDay() === 0) { // Sunday
-          const dateStr = getISTDateString(current);
-          const existingIndex = finalAttendance.findIndex(a => a.date.startsWith(dateStr));
-          
-          if (dateStr <= todayStr) {
-            if (existingIndex !== -1) {
-              // 🛡️ FORCE: Ensure existing Sunday record is marked as holiday if they didn't work and not on leave
-              const record = finalAttendance[existingIndex];
-              if (!record.checkIn && record.status !== 'leave') {
-                record.status = 'holiday';
-                record.title = 'Sunday';
-              }
-            } else {
-              finalAttendance.push({
-                userId,
-                date: dateStr,
-                status: 'holiday',
-                title: 'Sunday',
-                isVirtual: true
-              });
-            }
-          }
-        }
-        current.setDate(current.getDate() + 1);
-      }
-    }
-
-    // 5. 🧩 Smart Gap Filling (Mark missing working days as Absent)
-    if (startD && endD) {
-      let current = new Date(startD);
-      current.setHours(0, 0, 0, 0);
-      const lastCheckDate = new Date(Math.min(endD, new Date(todayStr))); 
-      lastCheckDate.setHours(23, 59, 59, 999);
-      
-      while (current <= lastCheckDate) {
-        const dateStr = getISTDateString(current);
-        const hasRecord = finalAttendance.some(a => a.date.startsWith(dateStr));
-        
-        // If no record exists yet (no check-in, no leave, no holiday, no Sunday)
-        if (!hasRecord) {
-          finalAttendance.push({
-            userId,
-            date: dateStr,
-            status: 'absent',
-            isVirtual: true,
-            message: 'No record found'
-          });
-        }
-        current.setDate(current.getDate() + 1);
-      }
-    }
-
-    // 6. 🏆 Final Polish: Strict Filter, Deduplicate & Sort
-    let filteredRecords = finalAttendance;
-    if (month && year) {
-      const { startStr, endStr } = getMonthRange(parseInt(year), parseInt(month));
-      filteredRecords = filteredRecords.filter(a => {
-        const dStr = a.date.split('T')[0];
-        return dStr >= startStr && dStr <= endStr;
-      });
-    }
-
-    // Deduplicate by date (priority to real records over virtual)
-    const recordMap = new Map();
-    filteredRecords.forEach(rec => {
-      const dStr = rec.date.split('T')[0];
-      const existing = recordMap.get(dStr);
-      // Prefer real records (id exists) or records with checkIn
-      if (!existing || (!existing._id && rec._id) || (rec.checkIn && !existing.checkIn)) {
-        recordMap.set(dStr, rec);
-      }
-    });
-
-    const uniqueAttendance = Array.from(recordMap.values());
-    uniqueAttendance.sort((a, b) => b.date.localeCompare(a.date));
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const paginatedAttendance = uniqueAttendance.slice(skip, skip + parseInt(limit));
+    const paginatedAttendance = finalAttendance.slice(skip, skip + parseInt(limit));
 
     res.status(200).json({
       success: true,
@@ -788,8 +571,8 @@ const getAttendanceHistory = async (req, res, next) => {
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
-          total: uniqueAttendance.length,
-          pages: Math.ceil(uniqueAttendance.length / parseInt(limit)),
+          total: finalAttendance.length,
+          pages: Math.ceil(finalAttendance.length / parseInt(limit)),
         },
       },
       message: 'Attendance history retrieved',

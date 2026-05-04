@@ -95,9 +95,11 @@ const endBreak = async (req, res, next) => {
       });
     }
 
-    const endTime = new Date();
-    const startTime = new Date(breakData.startTime);
-    const sessionDurationMinutes = Math.floor((endTime - startTime) / 60000);
+    const endTime = toIST(new Date());
+    const startTime = new Date(breakData.startTime); // Already shifted IST-as-UTC
+    
+    // Difference between two shifted objects is correct
+    const sessionDurationMinutes = Math.max(0, Math.floor((endTime - startTime) / 60000));
     const currentTotalMinutes = (breakData.durationMinutes || 0) + sessionDurationMinutes;
 
     // Fetch policy
@@ -110,7 +112,7 @@ const endBreak = async (req, res, next) => {
       { userId, date: today, 'break.isOnBreak': true },
       {
         $set: {
-          'break.endTime': toIST(endTime),
+          'break.endTime': endTime, // Use the already shifted endTime
           'break.isOnBreak': false,
           'break.durationMinutes': currentTotalMinutes,
           'break.exceededPolicy': exceededPolicy

@@ -36,7 +36,7 @@ const addReportHeader = (doc, title, subtitle, dateRange) => {
 
   // Stats bar
   doc.fillColor(COLORS.subtext).fontSize(9).text(
-    `DATE RANGE: ${dateRange.from} TO ${dateRange.to}   |   GENERATED ON: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
+    `DATE RANGE: ${dateRange.from} TO ${dateRange.to}   |   GENERATED ON: ${formatISTTime(new Date(), false)}`,
     40, 115
   );
   
@@ -190,8 +190,8 @@ const addAttendanceSection = async (doc, records, dateRange, showEmployeeColumn 
       const dayName = dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short' }) : '—';
       row.push(fmtDate(dateStr));
       row.push(dayName);
-      row.push(r.checkIn  ? new Date(r.checkIn).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—');
-      row.push(r.checkOut ? new Date(r.checkOut).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—');
+      row.push(r.checkIn  ? formatISTTime(r.checkIn) : '—');
+      row.push(r.checkOut ? formatISTTime(r.checkOut) : '—');
       row.push(fmtHrs(r.totalWorkingHours));
       row.push(r.totalBreakTime ? `${r.totalBreakTime}m` : '—');
       row.push((r.status || '—').toUpperCase());

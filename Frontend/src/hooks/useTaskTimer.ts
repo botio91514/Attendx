@@ -43,7 +43,7 @@ export const useTaskTimer = (task: Task, activeSessionStartTime?: string) => {
   }, [task._id, task.status, task.totalTime, activeSessionStartTime, isRunning])
 
   return { 
-    displayTime: formatSeconds(elapsed), 
+    displayTime: formatSeconds(Math.max(0, elapsed)), 
     isRunning 
   }
 }

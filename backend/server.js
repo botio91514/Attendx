@@ -13,6 +13,7 @@ const path = require('path');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const { generalLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const { toIST } = require('./utils/timeUtils');
 
 // Connect to Database
 connectDB();
@@ -155,7 +156,7 @@ app.get('/', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok',
-    timestamp: new Date().toISOString(),
+    timestamp: toIST(new Date()).toISOString(),
     uptime: process.uptime()
   });
 });
