@@ -81,17 +81,14 @@ const getISTMinutesFromMidnight = (date) => {
   if (!date) return 0;
   const d = new Date(date);
   
-  // Rule: If the date is far in the future compared to real Now, 
-  // it's likely already a "Virtual IST" shifted date.
-  const isAlreadyShifted = (d.getTime() - new Date().getTime()) > (2 * 60 * 60 * 1000);
-  
-  if (isAlreadyShifted) {
-    return d.getUTCHours() * 60 + d.getUTCMinutes();
-  }
-  
-  // Otherwise, treat as real UTC and shift
-  const ist = toIST(d);
-  return ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  /**
+   * 🛡️ Rule: "IST-as-UTC" Compliance
+   * Since we store everything in MongoDB shifted by +5.5 hours, 
+   * the d.getUTCHours() and d.getUTCMinutes() ALREADY contain the IST time.
+   * We do NOT need to check if it's already shifted, as all Date objects 
+   * passed to this function in this codebase are expected to be shifted.
+   */
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
 };
 
 /**
