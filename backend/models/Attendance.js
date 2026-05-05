@@ -158,27 +158,35 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
 
   // 4. Status Priority Engine
   const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
-  const hasLeave = (meta.cl > 0 || meta.sl > 0 || meta.rl > 0 || meta.lwp > 0);
+  const paidLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0);
+  const unpaidLeave = (meta.lwp || 0);
+  const effectiveCredit = Math.min(1.0, rawWorkFraction + paidLeave);
 
   let finalStatus = 'absent';
-  let finalWorkFraction = 0;
+  let finalWorkFraction = rawWorkFraction;
 
-  if (hasLeave) {
-    // 🛡️ Rule: leaveMeta exists → leave
-    finalStatus = 'leave';
-    finalWorkFraction = 0;
-  } else if (rawWorkFraction >= 1.0) {
-    // 🛡️ Rule: workFraction ≥ 1 → present/late
+  // 🛡️ Rule Engine: Determine status based on "Payable" and "Physical" presence
+  if (rawWorkFraction >= 1.0) {
+    // 🛡️ Rule: Full Physical Work
     finalStatus = isLate ? 'late' : 'present';
-    finalWorkFraction = 1.0;
+  } else if (effectiveCredit >= 1.0) {
+    // 🛡️ Rule: Full Payable Credit (Work + Paid Leave)
+    finalStatus = (paidLeave >= 1.0 && rawWorkFraction === 0) ? 'leave' : (isLate ? 'late' : 'present');
   } else if (rawWorkFraction >= 0.5) {
-    // 🛡️ Rule: workFraction ≥ 0.5 → half-day
+    // 🛡️ Rule: Partial Physical Work
     finalStatus = 'half-day';
-    finalWorkFraction = 0.5;
+  } else if (effectiveCredit >= 0.5) {
+    // 🛡️ Rule: Partial Payable Credit
+    finalStatus = (paidLeave >= 0.5 && rawWorkFraction === 0) ? 'leave' : 'half-day';
   } else {
-    // 🛡️ Default Rule: → absent
+    // 🛡️ Default: Absent
     finalStatus = 'absent';
-    finalWorkFraction = 0;
+  }
+
+  // 🛡️ SPECIAL RULE: If LWP exists alongside any work, it cannot be 'PRESENT' 
+  // (unless physical work is full 1.0)
+  if (unpaidLeave > 0 && rawWorkFraction > 0 && rawWorkFraction < 1.0) {
+    finalStatus = 'half-day';
   }
 
   return { status: finalStatus, workFraction: finalWorkFraction };
@@ -191,11 +199,8 @@ attendanceSchema.methods.getBreakdownString = function () {
 
   const components = [];
 
-  if (work > 0) {
+  if (work > 0 && work < 1.0) {
     components.push(`${work} Work`);
-  } else if (this.checkIn) {
-    // If they checked in but haven't earned fraction yet
-    components.push(`Work Started`);
   }
 
   if (meta.cl > 0) components.push(`${meta.cl} CL`);
@@ -204,9 +209,7 @@ attendanceSchema.methods.getBreakdownString = function () {
   if (meta.lwp > 0) components.push(`${meta.lwp} LWP`);
 
   if (components.length === 0) {
-    // Return status if it's special, otherwise 'Absent'
-    if (['holiday', 'leave'].includes(this.status)) return '';
-    return 'Absent';
+    return '';
   }
   return components.join(' + ');
 };

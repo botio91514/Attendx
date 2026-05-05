@@ -3,7 +3,23 @@ const Task = require('../models/Task');
 const WorkSession = require('../models/WorkSession');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
-const { toIST, parseISTToShiftedDate, getCurrentISTTime } = require('../utils/timeUtils');
+const { getCurrentISTTime } = require('../utils/timeUtils');
+
+/**
+ * 🛡️ Rule: "IST-as-UTC" Safe Parser
+ * Converts "YYYY-MM-DDTHH:mm" into a UTC Date object without shifting.
+ */
+const parseAsUTC = (dateTimeString) => {
+  if (!dateTimeString) return null;
+  try {
+    const [datePart, timePart] = dateTimeString.split("T");
+    const [year, month, day] = datePart.split("-").map(Number);
+    const [hour, minute] = timePart.split(":").map(Number);
+    return new Date(Date.UTC(year, month - 1, day, hour, minute));
+  } catch (err) {
+    return null;
+  }
+};
 
 /**
  * @desc    Upsert attendance record for an employee (Manual Admin Override)
@@ -24,26 +40,35 @@ exports.overrideAttendance = async (req, res, next) => {
       attendance = new Attendance({ userId, date });
     }
 
-    // Apply manual updates (Using parseISTToShiftedDate to prevent double-shifting)
+    // Apply manual updates (Safe UTC parsing - IST-as-UTC strategy)
     if (checkIn !== undefined) {
-      attendance.checkIn = checkIn ? parseISTToShiftedDate(checkIn) : null;
+      attendance.checkIn = checkIn ? parseAsUTC(checkIn) : null;
+      attendance.markModified('checkIn');
     }
     if (checkOut !== undefined) {
-      attendance.checkOut = checkOut ? parseISTToShiftedDate(checkOut) : null;
+      attendance.checkOut = checkOut ? parseAsUTC(checkOut) : null;
+      attendance.markModified('checkOut');
     }
     
+    // 🛡️ RECALCULATION RULE: 
+    // If admin explicitly sets a status -> LOCK the status (Manual Override).
+    // If admin only updates times (no status in body) -> UNLOCK and allow auto-recalc.
     if (status) {
       attendance.status = status;
-      attendance.isManualOverride = true; // 🔥 PERSISTENT LOCK
-      attendance._isManualStatus = true;   // Immediate lifecycle flag
+      attendance.isManualOverride = true; 
+      attendance._isManualStatus = true;   
+    } else {
+      // If we are updating times but not status, we want to re-enable auto-calculation
+      attendance.isManualOverride = false;
+      attendance._isManualStatus = false;
     }
     
     if (notes) attendance.notes = notes;
     
     if (breaks) {
       attendance.breaks = breaks.map(b => {
-        const start = b.breakStart ? parseISTToShiftedDate(b.breakStart) : getCurrentISTTime();
-        const end = b.breakEnd ? parseISTToShiftedDate(b.breakEnd) : null;
+        const start = b.breakStart ? parseAsUTC(b.breakStart) : null;
+        const end = b.breakEnd ? parseAsUTC(b.breakEnd) : null;
         return {
           breakStart: start,
           breakEnd: end,
@@ -100,20 +125,23 @@ exports.overrideTask = async (req, res, next) => {
 
     if (addSession) {
       const { startTime, endTime } = addSession;
-      const parsedStart = parseISTToShiftedDate(startTime);
-      const parsedEnd = parseISTToShiftedDate(endTime);
-      const duration = Math.floor((parsedEnd - parsedStart) / 1000);
+      const parsedStart = parseAsUTC(startTime);
+      const parsedEnd = parseAsUTC(endTime);
       
-      await WorkSession.create({
-        taskId,
-        userId: task.assignedTo,
-        startTime: parsedStart,
-        endTime: parsedEnd,
-        duration
-      });
+      if (parsedStart && parsedEnd) {
+        const duration = Math.floor((parsedEnd - parsedStart) / 1000);
+        
+        await WorkSession.create({
+          taskId,
+          userId: task.assignedTo,
+          startTime: parsedStart,
+          endTime: parsedEnd,
+          duration
+        });
 
-      // Update task totalTime
-      task.totalTime += duration;
+        // Update task totalTime
+        task.totalTime += duration;
+      }
     }
 
     await task.save();
