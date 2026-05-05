@@ -101,6 +101,15 @@ const AttendancePage: React.FC = () => {
     const lastMonthDays = new Date(year, month, 0).getDate();
 
     const days = [];
+
+    const statusColors: any = {
+      present: 'bg-success/20 text-success border-success/30',
+      late: 'bg-warning/20 text-warning border-warning/30',
+      'half-day': 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+      leave: 'bg-indigo-500/20 text-indigo-500 border-indigo-500/30',
+      absent: 'bg-destructive/10 text-destructive border-destructive/20',
+      holiday: 'bg-indigo-500/20 text-indigo-500 border-indigo-500/30'
+    };
     
     // Previous Month Days (Padding) — Show 30th/31st etc.
     for (let i = firstDay - 1; i >= 0; i--) {
@@ -160,16 +169,16 @@ const AttendancePage: React.FC = () => {
 
           {record || isSunday ? (
             <div className="absolute bottom-2 left-2 right-2 flex flex-col gap-1 z-10 w-fit max-w-full">
-              {/* Detailed Status Label */}
+              {/* Main Status Label */}
               <div className="flex flex-col gap-0.5">
-                <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md w-fit truncate ${status === 'leave' || status === 'holiday' ? 'bg-indigo-500/40 text-white' : status === 'present' ? 'bg-success/20 text-success' : status === 'absent' ? 'bg-destructive/20 text-destructive' : status === 'late' ? 'bg-warning/20 text-warning' : 'bg-primary/20 text-primary'}`}>
-                  {record?.breakdownString || status}
+                <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded backdrop-blur-md w-fit truncate ${statusColors[status]}`}>
+                  {status.toUpperCase()}
                 </span>
                 
-                {/* Credit Value from Backend */}
-                {status !== 'holiday' && (
-                  <span className="text-[8px] font-bold text-foreground/40 pl-1 uppercase tracking-tighter">
-                    Value: {record?.workFraction?.toFixed(1) || '0.0'}
+                {/* Secondary Breakdown (Optional) */}
+                {(status === 'half-day' || status === 'leave') && record?.breakdownString && (
+                  <span className="text-[8px] font-bold text-foreground/40 pl-1 uppercase tracking-tighter leading-none">
+                    ({record.breakdownString})
                   </span>
                 )}
               </div>
@@ -338,7 +347,6 @@ const AttendancePage: React.FC = () => {
                     const dateObj = new Date(row.date);
                     const isSunday = dateObj.getDay() === 0;
                     const status = row.status || (isSunday ? 'holiday' : 'absent');
-                    const displayStatus = row.breakdownString || status;
                     
                     return (
                       <tr key={i} className="border-b border-glass-border hover:bg-secondary/30 transition-colors">
@@ -349,9 +357,16 @@ const AttendancePage: React.FC = () => {
                         <td className="px-4 py-4 text-sm font-mono text-foreground">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-4 py-4 text-sm font-mono text-muted-foreground">{row.totalBreakTime || 0} min</td>
                         <td className="px-4 py-4">
-                          <span className={`${getStatusColor(status)} px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider`}>
-                            {displayStatus}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`${getStatusColor(status)} px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider w-fit`}>
+                              {status.toUpperCase()}
+                            </span>
+                            {(status === 'half-day' || status === 'leave') && row.breakdownString && (
+                              <span className="text-[9px] font-bold text-muted-foreground/60 pl-1 uppercase">
+                                ({row.breakdownString})
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

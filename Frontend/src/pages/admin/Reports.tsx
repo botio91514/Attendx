@@ -83,9 +83,10 @@ const Reports: React.FC = () => {
     const colors: any = {
       present: 'bg-success/10 text-success border-success/20',
       late: 'bg-warning/10 text-warning border-warning/20',
+      'half-day': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+      leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
       absent: 'bg-destructive/10 text-destructive border-destructive/20',
-      'half-day': 'bg-primary/10 text-primary border-primary/20',
-      leave: 'bg-primary/10 text-primary border-primary/20'
+      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
     };
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
@@ -178,9 +179,14 @@ const Reports: React.FC = () => {
           <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</span>
           {IconNode}
           {record && (
-            <div className="mt-auto flex flex-col gap-1 z-10 relative">
-              <span className={getStatusBadge(record.status)}>{record.breakdownString || record.status}</span>
-              {record.checkIn && <span className="text-[10px] font-mono text-foreground">In: {formatISTTime(record.checkIn)}</span>}
+            <div className="mt-auto flex flex-col gap-0.5 z-10 relative">
+              <span className={getStatusBadge(record.status)}>{record.status.toUpperCase()}</span>
+              {(record.status === 'half-day' || record.status === 'leave') && record.breakdownString && (
+                <span className="text-[8px] font-bold text-muted-foreground/60 pl-1 uppercase leading-none">
+                  ({record.breakdownString})
+                </span>
+              )}
+              {record.checkIn && <span className="text-[9px] font-mono text-foreground/50 pl-1">In: {formatISTTime(record.checkIn)}</span>}
             </div>
           )}
         </div>
@@ -331,10 +337,15 @@ const Reports: React.FC = () => {
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkIn ? formatISTTime(row.checkIn) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground">{row.checkOut ? formatISTTime(row.checkOut) : '--:--'}</td>
                         <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
-                        <td className="px-5 py-4">
-                          <span className={getStatusBadge(row.status)}>
-                            {row.breakdownString || row.status}
-                          </span>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span className={getStatusBadge(row.status)}>{row.status.toUpperCase()}</span>
+                            {(row.status === 'half-day' || row.status === 'leave') && row.breakdownString && (
+                              <span className="text-[9px] font-bold text-muted-foreground/60 pl-1">
+                                ({row.breakdownString})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-5 py-4 text-right">
                           <button onClick={() => { setSelectedEmp(row.userId); setViewMode('calendar'); }} className="p-2 hover:bg-primary/10 text-muted-foreground hover:text-primary rounded-lg transition-all" title="Detailed Calendar View"><Calendar className="w-4 h-4" /></button>

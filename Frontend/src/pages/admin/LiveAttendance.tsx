@@ -97,9 +97,10 @@ const LiveAttendance: React.FC = () => {
     const colors: any = {
       present: 'bg-success/10 text-success border-success/20',
       late: 'bg-warning/10 text-warning border-warning/20',
+      'half-day': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+      leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
       absent: 'bg-destructive/10 text-destructive border-destructive/20',
-      'half-day': 'bg-primary/10 text-primary border-primary/20',
-      leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
+      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
     };
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
@@ -201,11 +202,11 @@ const LiveAttendance: React.FC = () => {
                         {row.totalBreakTime || 0} min
                       </td>
                     <td className="px-5 py-4">
-                      <div className="flex flex-col gap-1">
-                        <span className={getStatusBadge(row.status)}>{row.status}</span>
-                        {row.breakdownString && (
-                          <span className="text-[9px] font-bold text-muted-foreground/70 pl-1">
-                            {row.breakdownString}
+                      <div className="flex flex-col gap-0.5">
+                        <span className={getStatusBadge(row.status)}>{row.status.toUpperCase()}</span>
+                        {(row.status === 'half-day' || row.status === 'leave') && row.breakdownString && (
+                          <span className="text-[9px] font-bold text-muted-foreground/70 pl-1 uppercase leading-none">
+                            ({row.breakdownString})
                           </span>
                         )}
                         {row.pendingLeave && (

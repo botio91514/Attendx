@@ -11,6 +11,12 @@ import { format } from 'date-fns';
 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
 
+// 🛡️ Rule: Strip 'Z' to prevent browser timezone shifting (IST-as-UTC strategy)
+const parseDBDate = (dateString: string) => {
+  if (!dateString) return '';
+  return dateString.replace('Z', '').substring(0, 16); // "YYYY-MM-DDTHH:mm"
+};
+
 const SystemCorrections: React.FC = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,14 +47,14 @@ const SystemCorrections: React.FC = () => {
       
       if (data) {
         setFormData({
-          checkIn: data.checkIn ? format(new Date(data.checkIn), "yyyy-MM-dd'T'HH:mm") : '',
-          checkOut: data.checkOut ? format(new Date(data.checkOut), "yyyy-MM-dd'T'HH:mm") : '',
+          checkIn: parseDBDate(data.checkIn),
+          checkOut: parseDBDate(data.checkOut),
           status: data.status || 'absent',
           notes: data.notes || '',
           breaks: (data.breaks || []).map((b: any) => ({
             ...b,
-            breakStart: format(new Date(b.breakStart), "yyyy-MM-dd'T'HH:mm"),
-            breakEnd: b.breakEnd ? format(new Date(b.breakEnd), "yyyy-MM-dd'T'HH:mm") : ''
+            breakStart: parseDBDate(b.breakStart),
+            breakEnd: parseDBDate(b.breakEnd)
           }))
         });
       } else {
