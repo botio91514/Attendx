@@ -4,6 +4,7 @@ const Attendance = require('../models/Attendance');
 const Leave = require('../models/Leave');
 const LeaveBalance = require('../models/LeaveBalance');
 const { getCurrentYear } = require('../utils/leaveHelpers');
+const { logAudit } = require('../utils/auditLogger');
 
 /**
  * @desc    Get all employees (Admin only)
@@ -159,6 +160,8 @@ const updateEmployee = async (req, res, next) => {
       });
     }
 
+    const before = employee.toObject();
+    
     // Update fields
     if (name) employee.name = name;
     if (department) employee.department = department;
@@ -168,13 +171,17 @@ const updateEmployee = async (req, res, next) => {
     if (baseSalary != null) employee.baseSalary = baseSalary;
 
     await employee.save();
+    const after = employee.toObject();
 
-    // --- AUDIT LOG (ADDED) ---
-    const AuditLog = require('../models/AuditLog');
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'EMPLOYEE_UPDATE',
-      performedBy: req.user._id,
-      details: `Updated profile for ${employee.name} (${employee.employeeId}). Changes: ${Object.keys(req.body).join(', ')}`
+      module: 'employee',
+      entityId: employee._id,
+      before,
+      after,
+      details: `Updated profile for ${employee.name} (${employee.employeeId})`,
+      req
     });
 
     res.status(200).json({
@@ -217,6 +224,8 @@ const deleteEmployee = async (req, res, next) => {
       });
     }
 
+    const before = employee.toObject();
+
     // Cascade delete all related records
     await Promise.all([
       Attendance.deleteMany({ userId: id }),
@@ -225,12 +234,15 @@ const deleteEmployee = async (req, res, next) => {
       User.findByIdAndDelete(id),
     ]);
 
-    // --- AUDIT LOG (ADDED) ---
-    const AuditLog = require('../models/AuditLog');
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'EMPLOYEE_DELETE',
-      performedBy: req.user._id,
-      details: `Permanently deleted employee: ${employee.name} (${employee.employeeId}) and all associated records.`
+      module: 'employee',
+      entityId: id,
+      before,
+      after: { status: 'deleted' },
+      details: `Permanently deleted employee: ${employee.name} (${employee.employeeId})`,
+      req
     });
 
     res.status(200).json({

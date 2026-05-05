@@ -21,6 +21,10 @@ const settingsSchema = new mongoose.Schema({
     type: Number,
     default: 60, // minutes allowed for break
   },
+  minWorkMinutes: {
+    type: Number,
+    default: 30, // Minimum minutes to be considered Half-Day
+  },
   // Break Policy (Added)
   breakDurationMinutes: { type: Number, default: 60 },
   workingDays: {
@@ -31,6 +35,28 @@ const settingsSchema = new mongoose.Schema({
     type: Number,
     default: 3, 
     min: 0
+  },
+  autoCheckoutTime: {
+    type: String,
+    default: '19:00', // HH:mm format
+  },
+  maxDailyCredit: {
+    type: Number,
+    default: 1.0,
+  },
+  weekendPolicy: {
+    type: String,
+    enum: ['holiday', 'working', 'optional'],
+    default: 'holiday',
+  },
+  autoBreakMinutes: {
+    type: Number,
+    default: 0,
+  },
+  breakPolicy: {
+    type: String,
+    enum: ['manual', 'auto-after-threshold'],
+    default: 'manual',
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

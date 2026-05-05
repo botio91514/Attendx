@@ -2,6 +2,7 @@ const Settings = require('../models/Settings');
 const { sendEmail } = require('../utils/emailService');
 const { policyChangeTemplate } = require('../utils/emailTemplates');
 const User = require('../models/User');
+const { logAudit } = require('../utils/auditLogger');
 
 /**
  * @desc    Get current office settings
@@ -33,6 +34,13 @@ const updateSettings = async (req, res, next) => {
       officeEndTime, 
       lateGracePeriod, 
       halfDayThreshold, 
+      minWorkMinutes,
+      lateGraceMinutes,
+      autoCheckoutTime,
+      maxDailyCredit,
+      weekendPolicy,
+      autoBreakMinutes,
+      breakPolicy,
       maxBreakLimit,
       breakDurationMinutes,
       workingDays
@@ -64,22 +72,33 @@ const updateSettings = async (req, res, next) => {
     
     // Other fields without granular change tracking for now
     if (halfDayThreshold !== undefined) settings.halfDayThreshold = halfDayThreshold;
+    if (minWorkMinutes !== undefined) settings.minWorkMinutes = minWorkMinutes;
+    if (lateGraceMinutes !== undefined) settings.lateGraceMinutes = lateGraceMinutes;
+    if (autoCheckoutTime !== undefined) settings.autoCheckoutTime = autoCheckoutTime;
+    if (maxDailyCredit !== undefined) settings.maxDailyCredit = maxDailyCredit;
+    if (weekendPolicy !== undefined) settings.weekendPolicy = weekendPolicy;
+    if (autoBreakMinutes !== undefined) settings.autoBreakMinutes = autoBreakMinutes;
+    if (breakPolicy !== undefined) settings.breakPolicy = breakPolicy;
     if (maxBreakLimit !== undefined) settings.maxBreakLimit = maxBreakLimit;
     if (breakDurationMinutes !== undefined) settings.breakDurationMinutes = breakDurationMinutes;
     
-    settings.updatedBy = req.user._id;
+    const before = settings.toObject();
+    
+    // ... apply changes ...
 
     await settings.save();
+    const after = settings.toObject();
     
-    // --- AUDIT LOG (ADDED) ---
-    const AuditLog = require('../models/AuditLog');
-    if (changes.length > 0) {
-      await AuditLog.create({
-        action: 'SETTINGS_UPDATE',
-        performedBy: req.user._id,
-        details: `Updated office configuration. Changes: ${changes.map(c => c.type).join(', ')}`
-      });
-    }
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
+      action: 'SETTINGS_UPDATE',
+      module: 'settings',
+      entityId: settings._id,
+      before,
+      after,
+      details: `Updated office configuration: ${changes.length > 0 ? changes.map(c => c.type).join(', ') : 'Minor changes'}`,
+      req
+    });
 
     res.status(200).json({
       success: true,

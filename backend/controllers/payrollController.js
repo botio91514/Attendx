@@ -9,6 +9,7 @@ const { getMonthRange } = require('../utils/attendanceHelpers');
 const { toIST } = require('../utils/timeUtils');
 const { sendEmail } = require('../utils/emailService');
 const { payslipTemplate } = require('../utils/emailTemplates');
+const { logAudit } = require('../utils/auditLogger');
 
 /**
  * @desc    Get payroll summary/preview for a specific month
@@ -297,11 +298,12 @@ const processPayroll = async (req, res, next) => {
 
     await Payroll.bulkWrite(ops);
 
-    // --- AUDIT LOG (ADDED) ---
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'PAYROLL_FINALIZE',
-      performedBy: req.user._id,
-      details: `Finalized and locked payroll for ${month}/${year}. Records created for ${payrollRecords.length} staff.`
+      module: 'payroll',
+      details: `Finalized and locked payroll for ${month}/${year}. Records for ${payrollRecords.length} staff.`,
+      req
     });
 
     res.status(200).json({
@@ -327,6 +329,7 @@ const updatePayroll = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Payroll record not found' });
     }
 
+    const before = payroll.toObject();
     if (bonus !== undefined) payroll.bonus = bonus;
     if (deductions !== undefined) payroll.deductionAmount = deductions;
     if (notes !== undefined) payroll.notes = notes;
@@ -341,13 +344,18 @@ const updatePayroll = async (req, res, next) => {
     // Recalculate net: (Gross + Bonus) - Deductions
     payroll.netSalary = Math.round((payroll.grossAmount + (payroll.bonus || 0)) - (payroll.deductionAmount || 0));
     
-    await payroll.save();
+    const updatedPayroll = await payroll.save();
+    const after = updatedPayroll.toObject();
 
-    // --- AUDIT LOG (ADDED) ---
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'PAYROLL_UPDATE',
-      performedBy: req.user._id,
-      details: `Updated payroll for ${payroll.userId.name} (${payroll.month}/${payroll.year}). Status: ${status || payroll.status}, Bonus: ${bonus || 0}, Net: ${payroll.netSalary}`
+      module: 'payroll',
+      entityId: updatedPayroll._id,
+      before,
+      after,
+      details: `Updated payroll for ${payroll.userId.name} (${payroll.month}/${payroll.year})`,
+      req
     });
 
     // Notify employee if marked as paid

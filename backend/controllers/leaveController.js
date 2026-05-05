@@ -6,12 +6,13 @@ const Notification = require('../models/Notification');
 const Settings = require('../models/Settings');
 const Holiday = require('../models/Holiday');
 const Payroll = require('../models/Payroll');
-const AuditLog = require('../models/AuditLog');
 const { 
   getISTDateString, 
   getCurrentYear,
-  toIST
+  toIST,
+  getCurrentISTTime
 } = require('../utils/timeUtils');
+const { logAudit } = require('../utils/auditLogger');
 const {
   distributeLeave,
   getDatesBetween
@@ -288,11 +289,15 @@ const approveLeave = async (req, res, next) => {
       syncResults.push({ date, status: record.status });
     }
 
-    // 6. Audit Log
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'LEAVE_APPROVE',
-      performedBy: adminId,
-      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}. CL: ${actualCLUsed}, LWP: ${actualLWPUsed}`
+      module: 'leave',
+      entityId: updatedLeave._id,
+      before: leave.toObject(),
+      after: updatedLeave.toObject(),
+      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}`,
+      req
     });
 
     res.status(200).json({ success: true, message: 'Leave request approved and synced' });
@@ -327,10 +332,15 @@ const rejectLeave = async (req, res, next) => {
     leave.reviewedAt = getCurrentISTTime();
     await leave.save();
 
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'LEAVE_REJECT',
-      performedBy: adminId,
-      details: `Rejected ${leave.leaveType} leave for ${leave.userId.name}. Reason: ${adminComment || 'None'}`
+      module: 'leave',
+      entityId: leave._id,
+      before: { status: 'pending' },
+      after: { status: 'rejected', adminComment },
+      details: `Rejected ${leave.leaveType} leave for ${leave.userId.name}`,
+      req
     });
 
     res.status(200).json({ success: true, message: 'Leave request rejected' });
@@ -412,11 +422,15 @@ const cancelLeave = async (req, res, next) => {
     leave.status = 'cancelled';
     await leave.save();
 
-    // --- AUDIT LOG (ADDED) ---
-    await AuditLog.create({
+    // --- AUDIT LOG (UPGRADED) ---
+    await logAudit({
       action: 'LEAVE_CANCEL',
-      performedBy: req.user._id,
-      details: `Cancelled ${leave.leaveType} leave request for ${req.user.name}. Status was ${leave.status}.`
+      module: 'leave',
+      entityId: leave._id,
+      before: { status: 'approved' },
+      after: { status: 'cancelled' },
+      details: `Cancelled ${leave.leaveType} leave request for ${req.user.name}`,
+      req
     });
 
     res.status(200).json({ success: true, message: 'Leave request cancelled and balance restored' });

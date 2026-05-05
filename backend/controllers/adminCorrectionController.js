@@ -2,7 +2,7 @@ const Attendance = require('../models/Attendance');
 const Task = require('../models/Task');
 const WorkSession = require('../models/WorkSession');
 const Settings = require('../models/Settings');
-const AuditLog = require('../models/AuditLog');
+const { logAudit } = require('../utils/auditLogger');
 const { getCurrentISTTime } = require('../utils/timeUtils');
 
 /**
@@ -35,6 +35,7 @@ exports.overrideAttendance = async (req, res, next) => {
     }
 
     let attendance = await Attendance.findOne({ userId, date });
+    const before = attendance ? attendance.toObject() : null;
 
     if (!attendance) {
       attendance = new Attendance({ userId, date });
@@ -59,8 +60,13 @@ exports.overrideAttendance = async (req, res, next) => {
       attendance._isManualStatus = true;   
     } else {
       // If we are updating times but not status, we want to re-enable auto-calculation
+      // This allows the model's pre-save logic to determine the correct status/fraction.
       attendance.isManualOverride = false;
       attendance._isManualStatus = false;
+      
+      // Force clean state for recalculation
+      attendance.status = undefined;
+      attendance.workFraction = undefined;
     }
     
     if (notes) attendance.notes = notes;
@@ -83,22 +89,24 @@ exports.overrideAttendance = async (req, res, next) => {
     const settings = await Settings.getSettings();
     attendance._settings = settings;
 
-    await attendance.save();
+    const updatedAttendance = await attendance.save();
+    const after = updatedAttendance.toObject();
 
-    // Log the override
-    await AuditLog.create({
-      performedBy: req.user._id,
-      action: 'ATTENDANCE_OVERRIDE',
-      targetModel: 'Attendance',
-      targetId: attendance._id,
-      details: `Manual override for User ${userId} on ${date}. Status: ${status}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    // 🛡️ Structured Audit Log
+    await logAudit({
+      action: before ? 'UPDATE_ATTENDANCE' : 'CREATE_ATTENDANCE',
+      module: 'attendance',
+      entityId: updatedAttendance._id,
+      before,
+      after,
+      targetUser: userId,
+      details: `Manual override for User ${userId} on ${date}`,
+      req
     });
 
     res.status(200).json({
       success: true,
-      data: attendance,
+      data: updatedAttendance,
       message: 'Attendance record updated successfully'
     });
   } catch (error) {
@@ -147,20 +155,71 @@ exports.overrideTask = async (req, res, next) => {
     await task.save();
 
     // Log the override
-    await AuditLog.create({
-      performedBy: req.user._id,
+    await logAudit({
       action: 'TASK_OVERRIDE',
-      targetModel: 'Task',
-      targetId: task._id,
+      module: 'task',
+      entityId: task._id,
+      targetUser: task.assignedTo,
       details: `Manual override for Task ${taskId}. Status: ${status}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      req
     });
 
     res.status(200).json({
       success: true,
       data: task,
       message: 'Task updated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+/**
+ * @desc    Force bulk recalculation of attendance records
+ * @route   POST /api/admin/attendance/recalculate
+ * @access  Private/Admin
+ */
+exports.recalculateAttendance = async (req, res, next) => {
+  try {
+    const { mode, startDate, endDate, forceOverrides } = req.body;
+    const settings = await Settings.getSettings();
+
+    let query = {};
+    if (mode === 'range' && startDate && endDate) {
+      query.date = { $gte: startDate, $lte: endDate };
+    } else if (mode === 'future_only') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      query.date = { $gte: todayStr };
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid mode or range' });
+    }
+
+    // Unless forced, don't touch manual overrides
+    if (!forceOverrides) {
+      query.isManualOverride = { $ne: true };
+    }
+
+    const records = await Attendance.find(query);
+    
+    let updatedCount = 0;
+    for (const record of records) {
+      record._settings = settings;
+      // Triggers pre-save logic which calls determineStatus
+      await record.save();
+      updatedCount++;
+    }
+
+    // Log the bulk action
+    await logAudit({
+      action: 'ATTENDANCE_RECALCULATE',
+      module: 'attendance',
+      details: `Bulk recalculated ${updatedCount} records in mode: ${mode}. Range: ${startDate} to ${endDate}. ForceOverrides: ${!!forceOverrides}`,
+      req
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully recalculated ${updatedCount} records.`,
+      count: updatedCount
     });
   } catch (error) {
     next(error);

@@ -97,27 +97,39 @@ attendanceSchema.index({ date: -1 });
 attendanceSchema.index({ userId: 1, date: -1 });
 
 // Method to calculate working hours
-attendanceSchema.methods.calculateWorkingHours = function () {
+attendanceSchema.methods.calculateWorkingHours = function (settings = null) {
   if (!this.checkIn || !this.checkOut) return 0;
 
   const checkInTime = new Date(this.checkIn).getTime();
   const checkOutTime = new Date(this.checkOut).getTime();
   const totalMinutes = Math.floor((checkOutTime - checkInTime) / (1000 * 60));
 
-  // Subtract break time
+  // 1. Subtract manual break time
   const totalBreak = Number(this.totalBreakTime || 0);
-  const workingMinutes = totalMinutes - totalBreak;
+  let workingMinutes = totalMinutes - totalBreak;
+
+  // 2. Auto Break Policy
+  if (settings?.breakPolicy === 'auto-after-threshold') {
+    const threshold = (settings.halfDayThreshold || 4) * 60; // Default 4 hours for auto-break threshold
+    if (workingMinutes >= threshold) {
+      workingMinutes -= (settings.autoBreakMinutes || 0);
+    }
+  }
 
   return workingMinutes > 0 ? workingMinutes : 0;
 };
 
 // Method to determine status and work fraction based on strict rules
 attendanceSchema.methods.determineStatus = function (settings = null) {
-  // 1. Check Sunday First (Highest priority)
-  // recordDate is UTC midnight for YYYY-MM-DD
-  const recordDate = new Date(this.date);
-  if (recordDate.getUTCDay() === 0) {
-    return { status: 'holiday', workFraction: 0 };
+  // 1. Check Working Days / Weekend Policy (Priority 1)
+  const dayOfWeek = new Date(this.date).getDay();
+  const isWorkingDay = settings?.workingDays?.includes(dayOfWeek);
+
+  if (!isWorkingDay) {
+    if (settings?.weekendPolicy === 'holiday') {
+      return { status: 'holiday', workFraction: 0 };
+    }
+    // If 'working' or 'optional', continue to process
   }
 
   // 2. Manual Override (Priority 2)
@@ -125,30 +137,44 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
     return { status: this.status, workFraction: this.workFraction };
   }
 
-  // 3. Calculate Work Potential (internal calculation)
+  // 3. Auto-Checkout Implementation
+  if (!this.checkOut && settings?.autoCheckoutTime) {
+    const [autoH, autoM] = settings.autoCheckoutTime.split(':').map(Number);
+    const now = new Date(); // In actual use, this would be compared with check-in date
+    
+    // Simple check: if current time > autoCheckoutTime on check-in day
+    const checkoutLimit = new Date(this.checkIn);
+    checkoutLimit.setHours(autoH, autoM, 0, 0);
+    
+    if (Date.now() > checkoutLimit.getTime()) {
+      this.checkOut = checkoutLimit;
+    }
+  }
+
+  // 4. Status Determination Logic
   let rawWorkFraction = 0;
   let isLate = false;
 
   if (this.checkIn) {
-    const halfDayHours = settings?.halfDayThreshold || 7;
-    const workingHours = this.calculateWorkingHours();
-    const halfDayMinutes = halfDayHours * 60;
-    const graceBuffer = 15;
+    const workingMinutes = this.calculateWorkingHours(settings);
+    const fullDayThresholdMin = (settings?.halfDayThreshold || 5) * 60;
 
-    // Check if late
+    // Check if late (Must be before checkout check)
     const startTimeStr = settings?.officeStartTime || '09:15';
-    const graceMinutes = Number(settings?.lateGracePeriod || 0);
+    const graceMinutes = Number(settings?.lateGraceMinutes || settings?.lateGracePeriod || 0);
     const [startHour, startMinute] = startTimeStr.split(':').map(Number);
-
     const currentTotalMin = getISTMinutesFromMidnight(this.checkIn);
     const thresholdTotalMin = (startHour * 60) + startMinute + graceMinutes;
     isLate = currentTotalMin > thresholdTotalMin;
 
     if (this.checkOut) {
-      if (workingHours >= (halfDayMinutes - graceBuffer)) {
+      const minWork = settings?.minWorkMinutes || 30;
+      if (workingMinutes >= fullDayThresholdMin) {
         rawWorkFraction = 1.0;
-      } else if (workingHours >= 30) { // At least 30 mins for half day
+      } else if (workingMinutes >= minWork) {
         rawWorkFraction = 0.5;
+      } else {
+        rawWorkFraction = 0;
       }
     } else {
       // Currently working - assume 1.0 (Present) until checkout
@@ -160,7 +186,10 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
   const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
   const paidLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0);
   const unpaidLeave = (meta.lwp || 0);
-  const effectiveCredit = Math.min(1.0, rawWorkFraction + paidLeave);
+  
+  // 5. Credit Clamping (Rule D)
+  const maxCredit = settings?.maxDailyCredit || 1.0;
+  const effectiveCredit = Math.min(maxCredit, rawWorkFraction + paidLeave);
 
   let finalStatus = 'absent';
   let finalWorkFraction = rawWorkFraction;
@@ -223,7 +252,7 @@ attendanceSchema.pre('save', function (next) {
 
   // Calculate working hours if both check-in and check-out exist
   if (this.checkIn && this.checkOut) {
-    this.totalWorkingHours = this.calculateWorkingHours();
+    this.totalWorkingHours = this.calculateWorkingHours(this._settings);
   }
 
   // Determine status and fraction automatically UNLESS it's a manual override

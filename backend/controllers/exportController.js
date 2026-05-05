@@ -31,11 +31,22 @@ const getDateRange = (query) => {
   return { from, to };
 };
 
+// Helper: Ensure user can only export their own data unless admin
+const checkOwnership = (req, employeeId) => {
+  if (req.user.role === 'admin') return true;
+  return req.user._id.toString() === employeeId.toString();
+};
+
 // 1. Export single employee attendance PDF
 const exportAttendancePDF = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const dateRange = getDateRange(req.query);
+
+    // Access Control
+    if (!checkOwnership(req, employeeId)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized access' });
+    }
 
     // Fetch employee details
     const employee = await User.findById(employeeId)
@@ -87,6 +98,11 @@ const exportPayslipPDF = async (req, res) => {
     const m = parseInt(month);
     const y = parseInt(year);
 
+    // Access Control
+    if (!checkOwnership(req, employeeId)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized access' });
+    }
+
     const employee = await User.findById(employeeId)
       .select('name email employeeId department role joiningDate baseSalary');
     if (!employee) {
@@ -105,21 +121,22 @@ const exportPayslipPDF = async (req, res) => {
     let dateRangeEnd;
 
     if (storedPayroll) {
-      // Use stored data (Professional way)
+      // Use stored data (Production Standard)
       payrollData = {
         month: monthName,
         year: y.toString(),
         basicSalary: storedPayroll.baseSalary,
         bonus: storedPayroll.bonus || 0,
-        absentDeduction: Math.abs(storedPayroll.grossSalary - (storedPayroll.payableDays * storedPayroll.dailyRate)) || 0, // Approx
+        // Deduction is the difference between potential full salary and what was actually earned
+        absentDeduction: (storedPayroll.workingDays * storedPayroll.dailyRate) - (storedPayroll.payableDays * storedPayroll.dailyRate),
         lateDeduction: 0,
-        otherDeductions: storedPayroll.deductions || 0,
+        otherDeductions: storedPayroll.deductionAmount || 0,
         workingDays: storedPayroll.workingDays,
         presentDays: storedPayroll.presentDays,
         absentDays: storedPayroll.absentDays,
         lateDays: storedPayroll.lateDays,
         netSalary: storedPayroll.netSalary,
-        onLeaveDays: 0
+        onLeaveDays: (storedPayroll.clDays || 0) + (storedPayroll.slDays || 0) + (storedPayroll.rlDays || 0)
       };
       
       const { endStr } = getMonthRange(y, m);
@@ -131,9 +148,11 @@ const exportPayslipPDF = async (req, res) => {
       const endDate = new Date(endStr);
       dateRangeEnd = endDate.getDate();
 
+      // 🛡️ SYNC WITH PAYROLL ENGINE logic
       const holidays = await Holiday.find({ date: { $gte: startDate, $lte: endDate } });
       const holidayDates = holidays.map(h => h.date.toISOString().split('T')[0]);
 
+      // Calculate total working days in month
       let totalWorkingDays = 0;
       let tempDate = new Date(startDate);
       while (tempDate <= endDate) {
@@ -142,30 +161,52 @@ const exportPayslipPDF = async (req, res) => {
         tempDate.setDate(tempDate.getDate() + 1);
       }
 
+      // Handle mid-month joining
+      let empWorkingDays = totalWorkingDays;
+      if (employee.joiningDate) {
+        const joiningDate = new Date(employee.joiningDate);
+        if (joiningDate > startDate && joiningDate <= endDate) {
+          empWorkingDays = 0;
+          let joinTemp = new Date(joiningDate);
+          while (joinTemp <= endDate) {
+            const d = joinTemp.getDay();
+            if (workingDaysConfig.includes(d) && !holidayDates.includes(joinTemp.toISOString().split('T')[0])) empWorkingDays++;
+            joinTemp.setDate(joinTemp.getDate() + 1);
+          }
+        }
+      }
+
       const attendance = await Attendance.find({ userId: employeeId, date: { $gte: startStr, $lte: endStr } });
-      let p = 0, h = 0, l = 0, a = 0;
+      let p = 0, h = 0, l = 0, a = 0, cl = 0, sl = 0, rl = 0, lwp = 0;
+
       attendance.forEach(r => {
         if (r.status === 'present') p++;
         else if (r.status === 'late') { p++; l++; }
         else if (r.status === 'half-day') h++;
         else a++;
+
+        const meta = r.leaveMeta || {};
+        cl += (meta.cl || 0);
+        sl += (meta.sl || 0);
+        rl += (meta.rl || 0);
+        lwp += (meta.lwp || 0);
       });
 
       const dailyRate = totalWorkingDays > 0 ? (employee.baseSalary || 0) / totalWorkingDays : 0;
-      const payableDays = p + (h * 0.5);
+      const payableDays = Math.min(empWorkingDays, p + (h * 0.5) + cl + sl + rl);
       
       payrollData = {
         month: monthName,
         year,
         basicSalary: employee.baseSalary || 0,
         bonus: 0,
-        absentDeduction: Math.round(((totalWorkingDays - payableDays) * dailyRate)),
+        absentDeduction: Math.round(((empWorkingDays - payableDays) * dailyRate)),
         lateDeduction: 0,
         workingDays: totalWorkingDays,
         presentDays: p,
         absentDays: totalWorkingDays - payableDays,
         lateDays: l,
-        onLeaveDays: 0,
+        onLeaveDays: cl + sl + rl,
         netSalary: Math.round(payableDays * dailyRate)
       };
     }
@@ -189,6 +230,11 @@ const exportLeavePDF = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const dateRange = getDateRange(req.query);
+
+    // Access Control
+    if (!checkOwnership(req, employeeId)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized access' });
+    }
 
     const employee = await User.findById(employeeId)
       .select('name email employeeId department role joiningDate');
