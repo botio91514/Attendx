@@ -4,6 +4,7 @@ const {
   applyLeave,
   getMyLeaves,
   getMyBalance,
+  getLeaveUsageSummary,
   cancelLeave,
   getAllLeaves,
   approveLeave,
@@ -40,6 +41,7 @@ router.get('/my', myLeavesValidation, getMyLeaves);
  * @access  Private (Employee)
  */
 router.get('/balance', getMyBalance);
+router.get('/usage-summary', getLeaveUsageSummary);
 
 /**
  * @route   PUT /api/leave/cancel/:id
@@ -55,6 +57,13 @@ router.put('/cancel/:id', cancelLeave);
  * @access  Private/Admin
  */
 router.get('/admin/all', isAdmin, getAllLeaves);
+
+/**
+ * @route   GET /api/leave/admin/usage-summary/:userId
+ * @desc    Get employee leave usage summary
+ * @access  Private/Admin
+ */
+router.get('/admin/usage-summary/:userId', isAdmin, getLeaveUsageSummary);
 
 /**
  * @route   PUT /api/leave/admin/:id/approve

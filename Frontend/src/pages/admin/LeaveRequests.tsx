@@ -174,7 +174,36 @@ const LeaveRequests: React.FC = () => {
                   </a>
                 )}
               </div>
-              <div className="flex flex-col gap-1 items-center">
+              <div className="flex flex-col gap-1 items-center px-4 border-l border-glass-border">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Usage (Used / Avail)</span>
+                <div className="flex gap-2">
+                   <div className="flex flex-col items-center">
+                      <span className="text-[9px] font-bold text-blue-500 uppercase">CL</span>
+                      <span className="text-xs font-bold">
+                        <span className="opacity-40">{leave.usageSummary?.cl ?? 0}</span>
+                        <span className="mx-1 text-muted-foreground">/</span>
+                        <span>{leave.userId?.leaveBalance?.cl ?? 0}</span>
+                      </span>
+                   </div>
+                   <div className="flex flex-col items-center border-l border-glass-border pl-2">
+                      <span className="text-[9px] font-bold text-rose-500 uppercase">SL</span>
+                      <span className="text-xs font-bold">
+                        <span className="opacity-40">{leave.usageSummary?.sl ?? 0}</span>
+                        <span className="mx-1 text-muted-foreground">/</span>
+                        <span>{leave.userId?.leaveBalance?.sl ?? 0}</span>
+                      </span>
+                   </div>
+                   <div className="flex flex-col items-center border-l border-glass-border pl-2">
+                      <span className="text-[9px] font-bold text-amber-500 uppercase">RL</span>
+                      <span className="text-xs font-bold">
+                        <span className="opacity-40">{leave.usageSummary?.rl ?? 0}</span>
+                        <span className="mx-1 text-muted-foreground">/</span>
+                        <span>{leave.userId?.leaveBalance?.rl ?? 0}</span>
+                      </span>
+                   </div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 items-center px-4 border-l border-glass-border">
                 <span className="status-leave text-xs">{leave.leaveType}</span>
                 {leave.isHalfDay && <span className="bg-amber-500/10 text-amber-500 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-500/20 uppercase">Half Day</span>}
               </div>

@@ -21,6 +21,8 @@ import { toast } from 'sonner';
 const fadeUp = { hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } };
 const tabs = ['All', 'Pending', 'Approved', 'Rejected'] as const;
 
+import { useMemo } from 'react';
+
 const LeavesPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<typeof tabs[number]>('All');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -39,21 +41,23 @@ const LeavesPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [leavesRes, balanceRes] = await Promise.all([
+      const [leavesRes, balanceRes, usageRes] = await Promise.all([
         api.get('/leave/my'),
-        api.get('/leave/balance')
+        api.get('/leave/balance'),
+        api.get('/leave/usage-summary')
       ]);
 
       if (leavesRes.success && leavesRes.data && Array.isArray(leavesRes.data.leaves)) {
         setLeaves(leavesRes.data.leaves);
       }
-      if (balanceRes.success && balanceRes.data && balanceRes.data.balance) {
+      if (balanceRes.success && balanceRes.data && balanceRes.data.balance && usageRes.success) {
         const b = balanceRes.data.balance;
+        const u = usageRes.data.summary;
         const balanceArray = [
-          { type: 'Casual', id: 'casual', total: b.casual?.total ?? 12, accrued: b.casual?.accrued ?? 0, remaining: b.casual?.available ?? 0, used: b.casual?.used ?? 0, monthlyLimit: 0, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
-          { type: 'Sick', id: 'sick', total: b.sick?.total ?? 6, accrued: b.sick?.accrued ?? 0, remaining: b.sick?.available ?? 0, used: b.sick?.used ?? 0, monthlyLimit: 6, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
-          { type: 'Religious', id: 'religious', total: b.religious?.total ?? 2, accrued: b.religious?.accrued ?? 0, remaining: b.religious?.available ?? 0, used: b.religious?.used ?? 0, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
-          { type: 'LWP', id: 'unpaid', total: 'Unlimited', accrued: '∞', remaining: '∞', used: b.unpaid?.used ?? 0, icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
+          { type: 'Casual', id: 'casual', total: u.cl.total, earned: u.cl.earned, used: u.cl.used, remaining: u.cl.available, monthlyLimit: 1, icon: Palmtree, color: 'hsl(215, 80%, 60%)', bg: 'bg-blue-500/10' },
+          { type: 'Sick', id: 'sick', total: u.sl.total, used: u.sl.used, remaining: u.sl.available, icon: Stethoscope, color: 'hsl(350, 80%, 60%)', bg: 'bg-rose-500/10' },
+          { type: 'Religious', id: 'religious', total: u.rl.total, used: u.rl.used, remaining: u.rl.available, icon: Church, color: 'hsl(40, 90%, 55%)', bg: 'bg-amber-500/10' },
+          { type: 'LWP', id: 'unpaid', total: '∞', used: u.lwp.used, remaining: '∞', icon: Wallet, color: 'hsl(160, 70%, 45%)', bg: 'bg-emerald-500/10' }
         ];
         setBalances(balanceArray);
       }
@@ -67,6 +71,23 @@ const LeavesPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const clUsedThisMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    let used = 0;
+    leaves.filter(l => l.status === 'approved' && l.clDays > 0).forEach(l => {
+      (l.dailyBreakdown || []).forEach((day: any) => {
+        const d = new Date(day.date);
+        if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && day.leaveType === 'cl') {
+          used += day.days || 1;
+        }
+      });
+    });
+    return used;
+  }, [leaves]);
 
   const filtered = Array.isArray(leaves) 
     ? (activeTab === 'All' 
@@ -155,51 +176,38 @@ const LeavesPage: React.FC = () => {
            <div key={i} className="glass-card p-5 relative overflow-hidden group border-none shadow-sm hover:shadow-md transition-all">
               <div className={`absolute top-0 right-0 w-24 h-24 blur-[40px] rounded-full opacity-10 group-hover:opacity-20 transition-opacity translate-x-1/2 -translate-y-1/2`} style={{ backgroundColor: lb.color }} />
               
-              <div className="flex justify-between items-start mb-6">
+              <div className="flex justify-between items-start mb-4">
                  <div className={`w-12 h-12 rounded-2xl ${lb.bg} flex items-center justify-center`}>
                     <lb.icon className="w-6 h-6" style={{ color: lb.color }} />
                  </div>
-                 <div className="text-right">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Status</span>
-                    <span className={`text-[11px] font-bold ${lb.remaining === 0 && lb.id !== 'unpaid' ? 'text-destructive' : 'text-success'} uppercase`}>
-                       {lb.id === 'unpaid' ? 'Active' : `${lb.remaining} Left`}
-                    </span>
+                 <div className="flex gap-4">
+                    <div className="text-right border-r border-glass-border pr-4">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">{lb.id === 'casual' ? 'Earned' : 'Quota'}</span>
+                        <span className="text-xl font-display font-bold text-foreground opacity-60">
+                          {lb.id === 'casual' ? lb.earned : lb.total}d
+                        </span>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Available</span>
+                        <span className={`text-xl font-display font-bold ${lb.remaining === 0 && lb.id !== 'unpaid' ? 'text-destructive' : 'text-foreground'}`}>
+                          {lb.id === 'unpaid' ? '∞' : `${lb.remaining}d`}
+                        </span>
+                    </div>
                  </div>
               </div>
 
-              <h4 className="text-sm font-bold text-foreground mb-4">{lb.type}</h4>
-              
-              <div className="space-y-4">
-                 <div className="flex justify-between items-end">
-                    <div className="flex flex-col">
-                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Accrued</span>
-                       <span className="text-sm font-bold">
-                          {lb.id === 'unpaid' ? '∞' : `${lb.accrued}d`}
-                       </span>
-                    </div>
-                    <div className="text-right flex flex-col">
-                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Used</span>
-                       <span className="text-sm font-bold text-destructive">{lb.used}d</span>
-                    </div>
-                 </div>
-
-                 <div className="relative h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-                    <motion.div 
-                       initial={{ width: 0 }}
-                       animate={{ width: lb.id === 'unpaid' ? '100%' : `${(lb.used / (lb.accrued || 1)) * 100}%` }}
-                       className="absolute h-full inset-0 rounded-full"
-                       style={{ backgroundColor: lb.id === 'unpaid' ? lb.color : (lb.used >= lb.accrued ? 'red' : lb.color) }}
-                    />
-                 </div>
-                 
-                  <div className="flex justify-between items-center text-[9px] font-bold text-muted-foreground uppercase">
-                    <span>Yearly Cap: {lb.total}</span>
-                    {lb.monthlyLimit > 0 && (
-                      <span className="text-primary/70 italic">
-                        Limit: {lb.monthlyLimit}d/mo
-                      </span>
-                    )}
+              <div className="flex justify-between items-end">
+                <div>
+                  <h4 className="text-sm font-bold text-foreground mb-1">{lb.type}</h4>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Used: {lb.used} days</p>
+                </div>
+                {lb.id === 'casual' && (
+                  <div className="text-right">
+                    <span className="text-[9px] font-bold text-primary block uppercase">
+                      Monthly Limit: {clUsedThisMonth}/{lb.monthlyLimit}
+                    </span>
                   </div>
+                )}
               </div>
            </div>
         ))}
@@ -425,6 +433,12 @@ const LeavesPage: React.FC = () => {
                         
                         if (formData.type === 'unpaid') {
                           lwp = count;
+                        } else if (formData.type === 'casual') {
+                          // Monthly limit logic for preview
+                          const monthlyRemaining = Math.max(0, 1 - clUsedThisMonth);
+                          const effectiveBalance = Math.min(yearlyRemaining, monthlyRemaining);
+                          paid = Math.min(count, effectiveBalance);
+                          lwp = Math.max(0, count - paid);
                         } else {
                           // Max paid is the minimum of requested days and yearly remaining
                           paid = Math.min(count, yearlyRemaining);

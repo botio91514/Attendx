@@ -607,14 +607,13 @@ const getAllAttendance = async (req, res, next) => {
       userId: { $in: employeeIds }
     }).populate('userId', 'name email employeeId department designation');
 
-    // 🏆 Step 3: Get approved leaves for the target date
+    // 🏆 Step 3: Get leaves for the target date
     // Use full-day boundaries to avoid timezone/boundary misses
     const startOfTarget = new Date(targetDate);
     const endOfTarget = new Date(targetDate);
     endOfTarget.setHours(23, 59, 59, 999);
 
     const leaves = await Leave.find({
-      status: 'pending',
       userId: { $in: employeeIds },
       startDate: { $lte: endOfTarget },
       endDate: { $gte: startOfTarget }
@@ -630,7 +629,9 @@ const getAllAttendance = async (req, res, next) => {
     const combined = employees.map(emp => {
       const activeTask = activeTasks.find(t => t.assignedTo.toString() === emp._id.toString());
       const record = attendanceRecords.find(a => a.userId._id.toString() === emp._id.toString());
-      const pendingLeave = leaves.find(l => l.userId.toString() === emp._id.toString());
+      const empLeaves = leaves.filter(l => l.userId.toString() === emp._id.toString());
+      const pendingLeave = empLeaves.find(l => l.status === 'pending');
+      const approvedLeave = empLeaves.find(l => l.status === 'approved');
       
       if (record) {
         const recordObj = record.toObject();
@@ -640,6 +641,19 @@ const getAllAttendance = async (req, res, next) => {
           activeTask,
           pendingLeave: !!pendingLeave,
           breakdownString: record.getBreakdownString()
+        };
+      }
+
+      if (approvedLeave) {
+        return {
+          userId: emp,
+          date: targetDate,
+          status: 'leave',
+          leaveType: approvedLeave.leaveType,
+          breakdownString: `1.0 ${String(approvedLeave.leaveType).toUpperCase()}`,
+          isVirtual: true,
+          pendingLeave: !!pendingLeave,
+          breaks: []
         };
       }
 
@@ -733,12 +747,20 @@ const processComprehensiveAttendance = async (from, to, employees, settings) => 
       );
 
       if (attendance) {
-        if (emp.name.toLowerCase().includes('dipak')) {
-          console.log(`[DEBUG] Dipak Record ${dateStr}: status=${attendance.status}, in=${attendance.checkIn}, out=${attendance.checkOut}`);
-        }
+        // Calculate breakdown for existing records (since lean() is used)
+        const meta = attendance.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+        const work = attendance.workFraction || 0;
+        const comps = [];
+        if (work > 0 && work < 1.0) comps.push(`${work} Work`);
+        if (meta.cl > 0) comps.push(`${meta.cl} CL`);
+        if (meta.sl > 0) comps.push(`${meta.sl} SL`);
+        if (meta.rl > 0) comps.push(`${meta.rl} RL`);
+        if (meta.lwp > 0) comps.push(`${meta.lwp} LWP`);
+        
         combinedRecords.push({
           ...attendance,
-          userId: emp
+          userId: emp,
+          breakdownString: comps.length > 0 ? comps.join(' + ') : ''
         });
       } else {
         // Check for Leave
@@ -753,6 +775,7 @@ const processComprehensiveAttendance = async (from, to, employees, settings) => 
             date: dateStr,
             status: 'leave',
             leaveType: leave.leaveType,
+            breakdownString: `1.0 ${String(leave.leaveType).toUpperCase()}`,
             isVirtual: true,
             totalWorkingHours: 0,
             totalBreakTime: 0

@@ -18,6 +18,7 @@ const Payroll = require('../models/Payroll');
 const Settings = require('../models/Settings');
 const { toIST, formatISTTime } = require('../utils/timeUtils');
 const { getMonthRange, calculateStats } = require('../utils/attendanceHelpers');
+const { calculateDynamicLeaveBalance } = require('../utils/leaveHelpers');
 const { processComprehensiveAttendance } = require('./attendanceController');
 
 // Helper: get date range from query params
@@ -481,6 +482,279 @@ const exportBulkPayrollCSV = async (req, res) => {
   }
 };
 
+const ExcelJS = require('exceljs');
+
+// 8. Professional Matrix Attendance Excel (Admin only)
+// 8. Professional Matrix Attendance Excel (Admin only)
+const exportAttendanceMatrixExcel = async (req, res) => {
+  try {
+    const dateRange = getDateRange(req.query);
+    const { from, to } = dateRange;
+    const { department, employeeId } = req.query;
+    
+    // 1. Fetch Data
+    const userQuery = { role: 'employee', isActive: true };
+    if (department) userQuery.department = department;
+    if (employeeId) userQuery._id = employeeId;
+    
+    const employees = await User.find(userQuery).select('name employeeId department');
+    const attendance = await Attendance.find({ date: { $gte: from, $lte: to } });
+    const holidays = await Holiday.find({ date: { $gte: new Date(from), $lte: new Date(to) } });
+    const holidayDates = holidays.map(h => {
+      const d = new Date(h.date);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    });
+    
+    const settings = await Settings.getSettings();
+    const workingDays = settings.workingDays || [1, 2, 3, 4, 5];
+    
+    const startObj = new Date(from);
+    const year = startObj.getFullYear();
+    const month = startObj.getMonth();
+    const monthName = startObj.toLocaleString('default', { month: 'long' });
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    // 2. Initialize Excel Workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Attendance Report');
+
+    // --- STYLING CONSTANTS ---
+    const COLORS = {
+      headerBg: 'FF1E293B',
+      headerText: 'FFFFFFFF',
+      present: 'FF10B981', // Green
+      halfDay: 'FFF59E0B', // Amber
+      cl: 'FF3B82F6',      // Blue (Casual)
+      sl: 'FF0EA5E9',      // Sky Blue (Sick)
+      rl: 'FF06B6D4',      // Cyan (Restricted)
+      lwp: 'FFEF4444',     // Red (LWP)
+      holiday: 'FFA855F7', // Purple
+      weekend: 'FF94A3B8', // Slate/Gray
+      summaryBg: 'FFF1F5F9',
+      border: 'FFCBD5E1'
+    };
+
+    // 3. Define Header Rows
+    // TITLE ROW (Merged)
+    worksheet.mergeCells(1, 1, 1, 2 + daysInMonth + 5);
+    const titleCell = worksheet.getCell(1, 1);
+    titleCell.value = `STAFF ATTENDANCE REPORT - ${monthName.toUpperCase()} ${year}`;
+    titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 30;
+
+    // LEGEND ROW
+    worksheet.mergeCells(2, 1, 2, 2 + daysInMonth + 8);
+    const legendCell = worksheet.getCell(2, 1);
+    legendCell.value = "LEGEND:  [P] Present  [HD] Half-Day  [CL] Casual Leave  [SL] Sick Leave  [RL] Religious Leave  [LWP] LWP  [A] Absent  [H] Holiday  [W] Weekend";
+    legendCell.font = { italic: true, size: 9, color: { argb: 'FF475569' } };
+    legendCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(2).height = 20;
+
+    // HEADER ROW 1: Date Numbers
+    const headerRow1 = ['Employee Details', ''];
+    for (let i = 1; i <= daysInMonth; i++) headerRow1.push(i);
+    headerRow1.push('SUMMARY (MONTHLY TOTALS)', '', '', '', '', '', '', '');
+    const row3 = worksheet.addRow(headerRow1);
+
+    // HEADER ROW 2: Day Names
+    const headerRow2 = ['Employee Name', 'Emp ID'];
+    for (let i = 1; i <= daysInMonth; i++) {
+      const d = new Date(year, month, i);
+      headerRow2.push(d.toLocaleString('default', { weekday: 'short' }));
+    }
+    headerRow2.push('Present', 'Half-Day', 'CL', 'SL', 'RL', 'LWP', 'Balance CL', 'Net Payable');
+    const row4 = worksheet.addRow(headerRow2);
+
+    // --- MERGE HEADERS ---
+    worksheet.mergeCells(3, 1, 3, 2); 
+    worksheet.mergeCells(3, 2 + daysInMonth + 1, 3, 2 + daysInMonth + 8);
+
+    // --- STYLE HEADERS ---
+    [3, 4].forEach(rowNum => {
+      const row = worksheet.getRow(rowNum);
+      row.height = 25;
+      row.font = { bold: true, color: { argb: COLORS.headerText }, size: 10 };
+      row.alignment = { horizontal: 'center', vertical: 'middle' };
+      row.eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
+        cell.border = {
+          top: { style: 'thin', color: { argb: COLORS.border } },
+          left: { style: 'thin', color: { argb: COLORS.border } },
+          bottom: { style: 'thin', color: { argb: COLORS.border } },
+          right: { style: 'thin', color: { argb: COLORS.border } }
+        };
+      });
+    });
+
+    // 5. Fill Data Rows
+    for (const [empIdx, emp] of employees.entries()) {
+      const empRecords = attendance.filter(a => a.userId.toString() === emp._id.toString());
+      const empAttendanceMap = {};
+      empRecords.forEach(r => {
+        empAttendanceMap[r.date] = r;
+      });
+
+      const rowData = [emp.name, emp.employeeId];
+      const cellStyles = []; 
+
+      let counts = { present: 0, halfDay: 0, cl: 0, sl: 0, rl: 0, lwp: 0 };
+      let netPayable = 0;
+
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const record = empAttendanceMap[dateStr];
+        const targetDate = new Date(year, month, i);
+        const isSunday = targetDate.getDay() === 0;
+        
+        if (record) {
+          const meta = record.leaveMeta || {};
+          
+          if (meta.cl > 0) {
+            rowData.push('CL');
+            cellStyles.push({ bg: COLORS.cl, text: 'FFFFFFFF' });
+          } else if (meta.sl > 0) {
+            rowData.push('SL');
+            cellStyles.push({ bg: COLORS.sl, text: 'FFFFFFFF' });
+          } else if (meta.rl > 0) {
+            rowData.push('RL');
+            cellStyles.push({ bg: COLORS.rl, text: 'FFFFFFFF' });
+          } else if (meta.lwp > 0) {
+            rowData.push('LWP');
+            cellStyles.push({ bg: COLORS.lwp, text: 'FFFFFFFF' });
+          } else if (record.status === 'present' || record.status === 'late') {
+            rowData.push('P');
+            cellStyles.push({ bg: COLORS.present, text: 'FFFFFFFF' });
+          } else if (record.status === 'half-day') {
+            rowData.push('HD');
+            cellStyles.push({ bg: COLORS.halfDay, text: 'FFFFFFFF' });
+          } else if (record.status === 'absent') {
+            rowData.push('A'); 
+            cellStyles.push({ bg: COLORS.lwp, text: 'FFFFFFFF' });
+          } else {
+            rowData.push('0');
+            cellStyles.push({ bg: null, text: 'FF000000' });
+          }
+        } else {
+          if (holidayDates.includes(dateStr)) {
+            rowData.push('H');
+            cellStyles.push({ bg: COLORS.holiday, text: 'FFFFFFFF' });
+          } else if (!workingDays.includes(targetDate.getDay()) || isSunday) {
+            rowData.push('W');
+            cellStyles.push({ bg: COLORS.weekend, text: 'FFFFFFFF' });
+          } else {
+            rowData.push('');
+            cellStyles.push({ bg: null, text: 'FF000000' });
+          }
+        }
+      }
+
+      // Summary Logic
+      empRecords.forEach(r => {
+        const meta = r.leaveMeta || {};
+        counts.cl += (meta.cl || 0);
+        counts.sl += (meta.sl || 0);
+        counts.rl += (meta.rl || 0);
+        counts.lwp += (meta.lwp || 0);
+        
+        if (!meta.cl && !meta.sl && !meta.rl && !meta.lwp) {
+           if (r.status === 'present' || r.status === 'late') counts.present++;
+           else if (r.status === 'half-day') counts.halfDay++;
+        }
+        netPayable += (r.workFraction || 0) + (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0);
+      });
+
+      // Calculate Dynamic CL Balance
+      const balanceResult = await calculateDynamicLeaveBalance(emp, Attendance, year);
+      const balanceCL = balanceResult.cl.available;
+
+      rowData.push(
+        counts.present, 
+        counts.halfDay, 
+        counts.cl, 
+        counts.sl, 
+        counts.rl, 
+        counts.lwp, 
+        balanceCL,
+        parseFloat(netPayable.toFixed(2))
+      );
+
+      const row = worksheet.addRow(rowData);
+      row.height = 20;
+
+      // Apply Cell Styling
+      row.eachCell((cell, colNum) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: COLORS.border } },
+          left: { style: 'thin', color: { argb: COLORS.border } },
+          bottom: { style: 'thin', color: { argb: COLORS.border } },
+          right: { style: 'thin', color: { argb: COLORS.border } }
+        };
+
+        if (empIdx % 2 === 1 && !cell.fill) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+        }
+
+        if (colNum > 2 && colNum <= 2 + daysInMonth) {
+          const style = cellStyles[colNum - 3];
+          if (style && style.bg) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.bg } };
+            cell.font = { bold: true, color: { argb: style.text }, size: 8 };
+          }
+        }
+
+        if (colNum > 2 + daysInMonth) {
+          cell.font = { bold: true, color: { argb: 'FF1E293B' }, size: 9 };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.summaryBg } };
+          // Highlight Net Payable
+          if (colNum === 2 + daysInMonth + 8) {
+             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+             cell.font = { bold: true, color: { argb: 'FF166534' } };
+          }
+          // Highlight Balance CL
+          if (colNum === 2 + daysInMonth + 7) {
+             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+             cell.font = { bold: true, color: { argb: 'FF1E40AF' } };
+          }
+        }
+
+        if (colNum <= 2) {
+          cell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+          cell.font = { bold: true, size: 10 };
+        }
+      });
+    }
+
+    // 6. Final Polish
+    worksheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }];
+    
+    // Column widths
+    worksheet.getColumn(1).width = 25; // Name
+    worksheet.getColumn(2).width = 10; // ID
+    for (let i = 3; i <= 2 + daysInMonth; i++) {
+      worksheet.getColumn(i).width = 4.2; // Days
+    }
+    // Summary widths
+    for (let i = 2 + daysInMonth + 1; i <= 2 + daysInMonth + 8; i++) {
+      worksheet.getColumn(i).width = 9;
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="attendance_report_${monthName}_${year}.xlsx"`);
+    
+    await workbook.xlsx.write(res);
+    res.end();
+    
+  } catch (err) {
+    console.error('Matrix Excel Export Error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate Excel report' });
+    }
+  }
+};
+
 module.exports = {
   exportAttendancePDF,
   exportAllAttendancePDF,
@@ -488,5 +762,6 @@ module.exports = {
   exportBulkLeaveCSV,
   exportBulkPayrollCSV,
   exportPayslipPDF,
-  exportLeavePDF
+  exportLeavePDF,
+  exportAttendanceMatrixExcel
 };

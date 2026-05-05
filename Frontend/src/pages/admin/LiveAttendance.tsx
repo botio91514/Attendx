@@ -100,10 +100,29 @@ const LiveAttendance: React.FC = () => {
       'half-day': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
       leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
       absent: 'bg-destructive/10 text-destructive border-destructive/20',
-      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
+      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
+      // Granular Leave Types
+      cl: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+      sl: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+      rl: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+      lwp: 'bg-destructive/10 text-destructive border-destructive/20'
     };
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
+
+  const getDisplayStatus = (record: any) => {
+    if (!record) return 'absent';
+    if (record.status === 'leave') {
+      if (record.leaveType) return record.leaveType.toLowerCase();
+      const meta = record.leaveMeta || {};
+      if (meta.cl > 0) return 'cl';
+      if (meta.sl > 0) return 'sl';
+      if (meta.rl > 0) return 'rl';
+      if (meta.lwp > 0) return 'lwp';
+    }
+    return record.status;
+  };
+
 
 
   return (
@@ -203,7 +222,7 @@ const LiveAttendance: React.FC = () => {
                       </td>
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-0.5">
-                        <span className={getStatusBadge(row.status)}>{row.status.toUpperCase()}</span>
+                        <span className={getStatusBadge(getDisplayStatus(row))}>{getDisplayStatus(row).toUpperCase()}</span>
                         {(row.status === 'half-day' || row.status === 'leave') && row.breakdownString && (
                           <span className="text-[9px] font-bold text-muted-foreground/70 pl-1 uppercase leading-none">
                             ({row.breakdownString})

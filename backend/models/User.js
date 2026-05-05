@@ -109,6 +109,11 @@ const userSchema = new mongoose.Schema(
       bankName: { type: String, default: null, select: false },
       accountHolderName: { type: String, default: null, select: false }
     },
+    leaveBalance: {
+      cl: { type: Number, default: 0 },
+      sl: { type: Number, default: 6 },
+      rl: { type: Number, default: 2 }
+    },
   },
   {
     timestamps: true,

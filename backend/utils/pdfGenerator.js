@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const PDFTable = require('pdfkit-table');
+const { formatISTTime } = require('./timeUtils');
 
 // Shared brand colors
 const COLORS = {

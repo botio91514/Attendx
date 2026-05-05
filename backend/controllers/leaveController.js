@@ -36,10 +36,11 @@ const applyLeave = async (req, res, next) => {
     const { startDate, endDate, reason, isHalfDay } = req.body;
     const userId = req.user._id;
 
-    // 1. Fetch Policies
-    const [settings, holidays] = await Promise.all([
+    // 1. Fetch Policies and User Balance
+    const [settings, holidays, user] = await Promise.all([
       Settings.getSettings(),
-      Holiday.find({ isActive: true })
+      Holiday.find({ isActive: true }),
+      User.findById(userId)
     ]);
 
     const holidayStrings = holidays.map(h => {
@@ -47,7 +48,6 @@ const applyLeave = async (req, res, next) => {
       return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
     });
 
-    // 🛡️ TIMEZONE-SAFE FILTERING (Sundays and Holidays)
     const allDates = getDatesBetween(new Date(startDate), new Date(endDate)).filter(dStr => {
       const [y, m, d] = dStr.split('-').map(Number);
       const isSunday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
@@ -58,7 +58,7 @@ const applyLeave = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'No working days found in selected range (Sundays or Holidays)' });
     }
 
-    // 🛡️ OVERLAP CHECK (Using dailyBreakdown for precision)
+    // 2. OVERLAP CHECK
     const existingLeaves = await Leave.find({
       userId,
       status: { $in: ['pending', 'approved'] }
@@ -66,49 +66,55 @@ const applyLeave = async (req, res, next) => {
     
     const bookedDates = new Set();
     existingLeaves.forEach(lv => {
-      if (lv.dailyBreakdown && lv.dailyBreakdown.length > 0) {
-        lv.dailyBreakdown.forEach(b => bookedDates.add(b.date));
-      } else {
-        // Fallback for older records
-        getDatesBetween(lv.startDate, lv.endDate).forEach(d => bookedDates.add(d));
-      }
+      (lv.dailyBreakdown || []).forEach(b => bookedDates.add(b.date));
     });
 
     if (allDates.some(d => bookedDates.has(d))) {
       return res.status(400).json({ success: false, message: 'Overlapping leave exists on these dates.' });
     }
 
-    // 4. TOTAL YEARLY BALANCE ENGINE
-    const currentYear = getISTDateString().slice(0, 4);
-    const yearlyUsed = { cl: 0, sl: 0, rl: 0 };
-
-    existingLeaves.forEach(lv => {
-      (lv.dailyBreakdown || []).forEach(day => {
-        const yearKey = day.date.slice(0, 4);
-        if (yearKey === currentYear) {
-          const dayVal = day.days || (lv.isHalfDay ? 0.5 : 1);
-          if (day.leaveType === 'cl') yearlyUsed.cl += dayVal;
-          if (day.leaveType === 'sl') yearlyUsed.sl += dayVal;
-          if (day.leaveType === 'rl') yearlyUsed.rl += dayVal;
-        }
-      });
-    });
-
+    // 3. LEAVE DISTRIBUTION (Strict Balance Check + Monthly Policy)
     const selectedType = req.body.leaveType || 'casual';
     const typeKeyMap = { casual: 'cl', sick: 'sl', religious: 'rl', unpaid: 'lwp' };
     const internalKey = typeKeyMap[selectedType] || 'lwp';
 
-    // 🛡️ SICK LEAVE VALIDATION: Only full days (1.0)
-    if (internalKey === 'sl' && isHalfDay) {
-      return res.status(400).json({
-        success: false,
-        message: 'Sick Leave (SL) can only be taken as full days. No half-day SL allowed.'
+    // Fetch actual balance dynamically from Attendance
+    const Attendance = require('../models/Attendance');
+    const { calculateDynamicLeaveBalance } = require('../utils/leaveHelpers');
+    const istNow = new Date();
+    const dynamicBalance = await calculateDynamicLeaveBalance(user, Attendance, istNow.getFullYear());
+    
+    const balance = {
+      cl: dynamicBalance.cl.available,
+      sl: dynamicBalance.sl.available,
+      rl: dynamicBalance.rl.available
+    };
+
+    // --- MONTHLY CL POLICY ENFORCEMENT ---
+    const { getMonthRange } = require('../utils/attendanceHelpers');
+    const { startStr, endStr } = getMonthRange(istNow.getFullYear(), istNow.getMonth() + 1);
+    const startOfMonth = new Date(startStr);
+    const endOfMonth = new Date(endStr);
+
+    const monthlyLeaves = await Leave.find({
+      userId,
+      status: 'approved',
+      startDate: { $lte: endOfMonth },
+      endDate: { $gte: startOfMonth }
+    });
+
+    let clUsedThisMonth = 0;
+    monthlyLeaves.forEach(l => {
+      (l.dailyBreakdown || []).forEach(day => {
+        const d = new Date(day.date);
+        if (d >= startOfMonth && d <= endOfMonth && day.leaveType === 'cl') {
+          clUsedThisMonth += (day.days || 1);
+        }
       });
-    }
+    });
 
-    const totalDaysValue = isHalfDay ? 0.5 : allDates.length;
-
-    const breakdown = distributeLeave(allDates, internalKey, yearlyUsed, isHalfDay, req.user.joiningDate);
+    const monthlyCLRemaining = Math.max(0, (settings.clPerMonth || 1) - clUsedThisMonth);
+    const breakdown = distributeLeave(allDates, internalKey, balance, isHalfDay, monthlyCLRemaining);
 
     if (breakdown.sl > 2 && !req.body.attachment) {
       return res.status(400).json({
@@ -124,7 +130,9 @@ const applyLeave = async (req, res, next) => {
       yearBreakdown[year].push(day.date);
     });
 
-    // 5. Create Leave Record
+    const totalDaysValue = isHalfDay ? 0.5 : allDates.length;
+
+    // 4. Create Leave Record
     const leave = await Leave.create({
       userId,
       leaveType: selectedType,
@@ -146,10 +154,9 @@ const applyLeave = async (req, res, next) => {
     res.status(201).json({ 
       success: true, 
       message: 'Leave request submitted successfully',
-      data: { leave }
+      data: { leave, breakdown: { cl: breakdown.cl, sl: breakdown.sl, rl: breakdown.rl, lwp: breakdown.lwp } }
     });
 
-    // Notify admins
     emitToAdmins('notification:new', {
       type: 'leave_request',
       title: '📋 New Leave Request',
@@ -161,9 +168,6 @@ const applyLeave = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Approve leave (Accrual Engine)
- */
 const approveLeave = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -173,32 +177,7 @@ const approveLeave = async (req, res, next) => {
     if (!leave) return res.status(404).json({ success: false, message: 'Request not found' });
     if (leave.status !== 'pending') return res.status(400).json({ success: false, message: `Request is already ${leave.status}` });
 
-    // 1. PAYROLL LOCK PROTECTION
-    for (const [year, dates] of leave.yearBreakdown) {
-      const months = [...new Set(dates.map(d => new Date(d).getMonth() + 1))];
-      for (const m of months) {
-        const finalized = await Payroll.findOne({ month: m, year: parseInt(year) });
-        if (finalized) {
-          return res.status(400).json({
-            success: false,
-            message: 'Payroll already finalized for this period. Unlock to proceed.'
-          });
-        }
-      }
-    }
-
-    // 2. FETCH BALANCE FOR VALIDATION
-    const currentYear = getCurrentYear();
-    const balanceDoc = await LeaveBalance.findOne({ userId: leave.userId._id, year: currentYear });
-    if (!balanceDoc) return res.status(400).json({ success: false, message: 'Leave balance not found' });
-
-    let availableCL = balanceDoc.casual.total - balanceDoc.casual.used;
-    let actualCLUsed = 0;
-    let actualSLUsed = 0;
-    let actualRLUsed = 0;
-    let actualLWPUsed = 0;
-
-    // 3. Update Status (🛡️ APPROVAL SAFETY: Atomic check)
+    // 1. Update Status (Atomic check)
     const updatedLeave = await Leave.findOneAndUpdate(
       { _id: id, status: 'pending' },
       { 
@@ -215,69 +194,40 @@ const approveLeave = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Leave is no longer pending or already processed' });
     }
 
-    // 4. SYNC ATTENDANCE (Source of Truth)
+    // 2. DEDUCT FROM USER BALANCE (With Negative Prevention)
+    const user = await User.findById(leave.userId._id);
+    const newBalance = {
+      cl: Math.max(0, (user.leaveBalance?.cl || 0) - updatedLeave.clDays),
+      sl: Math.max(0, (user.leaveBalance?.sl || 0) - updatedLeave.slDays),
+      rl: Math.max(0, (user.leaveBalance?.rl || 0) - updatedLeave.rlDays)
+    };
+
+    await User.findByIdAndUpdate(leave.userId._id, {
+      $set: { leaveBalance: newBalance }
+    });
+
+    // 3. SYNC ATTENDANCE
     const Attendance = require('../models/Attendance');
-    const dateMap = {};
+    const syncResults = [];
 
     for (const item of updatedLeave.dailyBreakdown) {
       const date = item.date;
-      if (!dateMap[date]) dateMap[date] = { cl: 0, sl: 0, rl: 0, lwp: 0 };
-      
-      const requestedDays = item.days || (updatedLeave.isHalfDay ? 0.5 : 1);
-      const type = item.leaveType.toLowerCase();
+      const meta = { cl: 0, sl: 0, rl: 0, lwp: 0 };
+      meta[item.leaveType] = item.days || (updatedLeave.isHalfDay ? 0.5 : 1);
 
-      // Implement Policy: If CL and no balance -> Fallback to LWP
-      if (type === 'cl') {
-        if (availableCL >= requestedDays) {
-          dateMap[date].cl += requestedDays;
-          actualCLUsed += requestedDays;
-          availableCL -= requestedDays;
-        } else if (availableCL > 0) {
-          const splitCL = availableCL;
-          const splitLWP = requestedDays - splitCL;
-          dateMap[date].cl += splitCL;
-          dateMap[date].lwp += splitLWP;
-          actualCLUsed += splitCL;
-          actualLWPUsed += splitLWP;
-          availableCL = 0;
-        } else {
-          dateMap[date].lwp += requestedDays;
-          actualLWPUsed += requestedDays;
-        }
-      } else if (type === 'sl') {
-        dateMap[date].sl += requestedDays;
-        actualSLUsed += requestedDays;
-      } else if (type === 'rl') {
-        dateMap[date].rl += requestedDays;
-        actualRLUsed += requestedDays;
-      } else {
-        dateMap[date].lwp += requestedDays;
-        actualLWPUsed += requestedDays;
-      }
-    }
-
-    // 5. UPDATE FINAL BALANCE
-    await LeaveBalance.findOneAndUpdate(
-      { userId: leave.userId._id, year: currentYear },
-      { 
-        $inc: { 
-          'casual.used': actualCLUsed,
-          'sick.used': actualSLUsed,
-          'religious.used': actualRLUsed,
-          'unpaid.used': actualLWPUsed
-        }
-      }
-    );
-
-    const syncResults = [];
-    for (const [date, meta] of Object.entries(dateMap)) {
       const notes = `Approved Leave: ${updatedLeave.leaveType.toUpperCase()} (ID: ${id})`;
       let record = await Attendance.findOne({ userId: updatedLeave.userId._id, date });
       
       if (record) {
-        record.leaveMeta = meta;
+        // Merge with existing leaveMeta if any (rare overlap)
+        record.leaveMeta = {
+          cl: (record.leaveMeta?.cl || 0) + meta.cl,
+          sl: (record.leaveMeta?.sl || 0) + meta.sl,
+          rl: (record.leaveMeta?.rl || 0) + meta.rl,
+          lwp: (record.leaveMeta?.lwp || 0) + meta.lwp,
+        };
         record.notes = notes;
-        await record.save(); // Model logic will handle workFraction priorities
+        await record.save();
       } else {
         record = await Attendance.create({
           userId: updatedLeave.userId._id,
@@ -289,23 +239,21 @@ const approveLeave = async (req, res, next) => {
       syncResults.push({ date, status: record.status });
     }
 
-    // --- AUDIT LOG (UPGRADED) ---
+    // 4. AUDIT LOG
     await logAudit({
       action: 'LEAVE_APPROVE',
       module: 'leave',
       entityId: updatedLeave._id,
-      before: leave.toObject(),
-      after: updatedLeave.toObject(),
-      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}`,
+      details: `Approved ${updatedLeave.totalDays}d leave for ${updatedLeave.userId.name}. Breakdown: CL:${updatedLeave.clDays}, SL:${updatedLeave.slDays}, RL:${updatedLeave.rlDays}, LWP:${updatedLeave.lwpDays}`,
       req
     });
 
-    res.status(200).json({ success: true, message: 'Leave request approved and synced' });
+    res.status(200).json({ success: true, message: 'Leave request approved and balance deducted' });
 
     emitToUser(updatedLeave.userId._id.toString(), 'notification:new', {
       type: 'leave_approved',
       title: '✅ Leave Approved',
-      message: 'Your leave request has been approved.',
+      message: 'Your leave request has been approved and balance updated.',
       link: '/leaves'
     });
   } catch (error) {
@@ -359,11 +307,50 @@ const getMyLeaves = async (req, res, next) => {
 
 const getMyBalance = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    const Attendance = require('../models/Attendance');
+    const { calculateDynamicLeaveBalance } = require('../utils/leaveHelpers');
     const year = getCurrentYear();
-    let balance = await LeaveBalance.findOne({ userId, year });
-    if (!balance) balance = await LeaveBalance.create({ userId, year });
-    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(req.user.joiningDate), year } });
+    const balanceResult = await calculateDynamicLeaveBalance(user, Attendance, year);
+
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        balance: {
+          cl: balanceResult.cl.available,
+          sl: balanceResult.sl.available,
+          rl: balanceResult.rl.available
+        },
+        year 
+      } 
+    });
+  } catch (error) { next(error); }
+};
+
+const getEmployeeBalance = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const Attendance = require('../models/Attendance');
+    const { calculateDynamicLeaveBalance } = require('../utils/leaveHelpers');
+    const year = getCurrentYear();
+    const balanceResult = await calculateDynamicLeaveBalance(user, Attendance, year);
+
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        balance: {
+          cl: balanceResult.cl.available,
+          sl: balanceResult.sl.available,
+          rl: balanceResult.rl.available
+        },
+        year 
+      } 
+    });
   } catch (error) { next(error); }
 };
 
@@ -372,9 +359,46 @@ const getAllLeaves = async (req, res, next) => {
     const { status } = req.query;
     const query = status ? { status } : {};
     const leaves = await Leave.find(query)
-      .populate('userId', 'name email employeeId department')
+      .populate('userId', 'name email employeeId department leaveBalance')
       .sort({ appliedAt: -1 });
-    res.status(200).json({ success: true, data: { leaves } });
+
+    // Optimization: Get usage summary for these users
+    const userIds = [...new Set(leaves.map(l => l.userId?._id).filter(Boolean))];
+    const year = getCurrentYear();
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+
+    const Attendance = require('../models/Attendance');
+    const attendanceRecords = await Attendance.find({
+      userId: { $in: userIds },
+      date: { $gte: startDate, $lte: endDate }
+    });
+
+    const userUsageMap = {};
+    userIds.forEach(id => {
+      userUsageMap[id.toString()] = { cl: 0, sl: 0, rl: 0, lwp: 0 };
+    });
+
+    attendanceRecords.forEach(rec => {
+      const uId = rec.userId.toString();
+      if (userUsageMap[uId]) {
+        const meta = rec.leaveMeta || {};
+        userUsageMap[uId].cl += (meta.cl || 0);
+        userUsageMap[uId].sl += (meta.sl || 0);
+        userUsageMap[uId].rl += (meta.rl || 0);
+        userUsageMap[uId].lwp += (meta.lwp || 0);
+      }
+    });
+
+    const leavesWithUsage = leaves.map(l => {
+      const obj = l.toObject();
+      if (obj.userId) {
+        obj.usageSummary = userUsageMap[obj.userId._id.toString()] || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+      }
+      return obj;
+    });
+
+    res.status(200).json({ success: true, data: { leaves: leavesWithUsage } });
   } catch (error) { next(error); }
 };
 
@@ -391,18 +415,13 @@ const cancelLeave = async (req, res, next) => {
 
     // 🛡️ LEAVE CANCELLATION FIX: Reverse balance if it was already approved
     if (leave.status === 'approved') {
-      const currentYear = getCurrentYear();
-      await LeaveBalance.findOneAndUpdate(
-        { userId: leave.userId, year: currentYear },
-        { 
-          $inc: { 
-            'casual.used': -leave.clDays,
-            'sick.used': -leave.slDays,
-            'religious.used': -leave.rlDays,
-            'unpaid.used': -leave.lwpDays
-          }
+      await User.findByIdAndUpdate(leave.userId, {
+        $inc: {
+          'leaveBalance.cl': leave.clDays,
+          'leaveBalance.sl': leave.slDays,
+          'leaveBalance.rl': leave.rlDays
         }
-      );
+      });
 
       // Revert Attendance Marks
       const Attendance = require('../models/Attendance');
@@ -414,7 +433,7 @@ const cancelLeave = async (req, res, next) => {
       for (const record of records) {
         // Reset leaveMeta and notes
         record.leaveMeta = { cl: 0, sl: 0, rl: 0, lwp: 0 };
-        record.notes = 'Leave Cancelled: Reverted';
+        record.notes = 'Leave Cancelled: Balance Restored';
         await record.save(); // Triggers status recalculation
       }
     }
@@ -422,14 +441,14 @@ const cancelLeave = async (req, res, next) => {
     leave.status = 'cancelled';
     await leave.save();
 
-    // --- AUDIT LOG (UPGRADED) ---
+    // --- AUDIT LOG ---
     await logAudit({
       action: 'LEAVE_CANCEL',
       module: 'leave',
       entityId: leave._id,
-      before: { status: 'approved' },
+      before: { status: leave.status },
       after: { status: 'cancelled' },
-      details: `Cancelled ${leave.leaveType} leave request for ${req.user.name}`,
+      details: `Cancelled ${leave.leaveType} leave request for ${req.user.name}. Balance restored if applicable.`,
       req
     });
 
@@ -437,14 +456,39 @@ const cancelLeave = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-const getEmployeeBalance = async (req, res, next) => {
+/**
+ * 📊 LEAVE USAGE SUMMARY
+ * Source of Truth: Attendance Records (leaveMeta)
+ */
+const getLeaveUsageSummary = async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const year = getCurrentYear();
-    let balance = await LeaveBalance.findOne({ userId, year });
-    if (!balance) balance = await LeaveBalance.create({ userId, year });
+    const userId = req.params.userId || req.user._id;
+    const year = req.query.year || getCurrentYear();
+    
     const user = await User.findById(userId);
-    res.status(200).json({ success: true, data: { balance: balance.getAccrualSummary(user?.joiningDate), year } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const Attendance = require('../models/Attendance');
+    const { calculateDynamicLeaveBalance } = require('../utils/leaveHelpers');
+    
+    const balanceResult = await calculateDynamicLeaveBalance(user, Attendance, year);
+
+    // Sync user.leaveBalance.cl in background as requested (Step 4 Logic)
+    User.findByIdAndUpdate(userId, {
+      $set: { 
+        'leaveBalance.cl': balanceResult.cl.available,
+        'leaveBalance.sl': balanceResult.sl.available,
+        'leaveBalance.rl': balanceResult.rl.available
+      }
+    }).catch(err => console.error('Balance sync failed:', err));
+
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        summary: balanceResult, 
+        year 
+      } 
+    });
   } catch (error) { next(error); }
 };
 
@@ -469,6 +513,7 @@ module.exports = {
   applyLeave,
   getMyLeaves,
   getMyBalance,
+  getLeaveUsageSummary,
   cancelLeave,
   getAllLeaves,
   approveLeave,

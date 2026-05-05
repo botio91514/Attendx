@@ -177,7 +177,7 @@ startCheckoutReminderJob();
 startAbsentAlertJob();
 startAutoCheckoutJob();
 startBreakMonitorJob();
-require('./cron/leaveReset');
+require('./cron/leaveJobs');
 // --- END CRON JOBS ---
 
 const { createServer } = require('http');

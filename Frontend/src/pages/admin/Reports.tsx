@@ -86,7 +86,12 @@ const Reports: React.FC = () => {
       'half-day': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
       leave: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
       absent: 'bg-destructive/10 text-destructive border-destructive/20',
-      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20'
+      holiday: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
+      // Granular Leave Types
+      cl: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+      sl: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+      rl: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+      lwp: 'bg-destructive/10 text-destructive border-destructive/20'
     };
     return `px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${colors[status] || 'bg-secondary text-muted-foreground'}`;
   };
@@ -98,28 +103,46 @@ const Reports: React.FC = () => {
     return `${h}h ${m}m`;
   };
 
+  const getDisplayStatus = (record: any) => {
+    if (!record) return 'absent';
+    if (record.status === 'leave') {
+      if (record.leaveType) return record.leaveType.toLowerCase();
+      const meta = record.leaveMeta || {};
+      if (meta.cl > 0) return 'cl';
+      if (meta.sl > 0) return 'sl';
+      if (meta.rl > 0) return 'rl';
+      if (meta.lwp > 0) return 'lwp';
+    }
+    return record.status;
+  };
+
+
   const handleCSVExport = async () => {
     try {
       setLoading(true);
-      const query = new URLSearchParams({ from: filters.from, to: filters.to });
+      const query = new URLSearchParams();
+      if (filters.from) query.append('from', filters.from);
+      if (filters.to) query.append('to', filters.to);
+      if (filters.department) query.append('department', filters.department);
+      
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
       
-      const response = await fetch(`${API_URL}/export/attendance/all/csv?${query}`, {
+      const response = await fetch(`${API_URL}/admin/export/attendance-csv?${query}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      if (!response.ok) throw new Error('CSV Export failed');
+      if (!response.ok) throw new Error('Excel Export failed');
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `staff_attendance_${filters.from}_to_${filters.to}.csv`;
+      a.download = `attendance_report_${filters.from}.xlsx`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       a.remove();
-      toast.success('CSV downloaded successfully!');
+      toast.success('Professional Excel Report downloaded successfully!');
     } catch (err) {
       toast.error('Failed to export CSV');
     } finally {
@@ -180,7 +203,7 @@ const Reports: React.FC = () => {
           {IconNode}
           {record && (
             <div className="mt-auto flex flex-col gap-0.5 z-10 relative">
-              <span className={getStatusBadge(record.status)}>{record.status.toUpperCase()}</span>
+              <span className={getStatusBadge(getDisplayStatus(record))}>{getDisplayStatus(record).toUpperCase()}</span>
               {(record.status === 'half-day' || record.status === 'leave') && record.breakdownString && (
                 <span className="text-[8px] font-bold text-muted-foreground/60 pl-1 uppercase leading-none">
                   ({record.breakdownString})
@@ -233,26 +256,17 @@ const Reports: React.FC = () => {
                 {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
               </div>
               <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="p-2 hover:bg-secondary transition-colors"><ChevronRight className="w-4 h-4" /></button>
-              <div className="border-l border-glass-border p-1">
-                 <ExportButton type="attendance" employeeId={selectedEmp?._id} dateRange={{ from: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`, to: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-31` }} variant="ghost" size="sm" label="Export PDF" />
-              </div>
             </div>
           ) : (
             <>
-              <button 
-                onClick={handleCSVExport}
-                disabled={loading}
-                className="glow-button flex items-center gap-2 text-sm py-2 px-4 shadow-primary/10 transition-all hidden sm:flex"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Export CSV
-              </button>
-              <ExportButton 
-                type="attendance" 
-                bulk={true} 
-                dateRange={{ from: filters.from, to: filters.to }} 
-                label="Download PDF Log" 
-              />
+            <button 
+              onClick={handleCSVExport}
+              disabled={loading}
+              className="glow-button flex items-center gap-2 text-sm py-2 px-6 shadow-primary/10 transition-all"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              Export Excel Report
+            </button>
             </>
           )}
         </div>
@@ -339,7 +353,7 @@ const Reports: React.FC = () => {
                         <td className="px-5 py-4 text-sm font-mono text-foreground font-bold text-primary">{formatWorkingHours(row.totalWorkingHours)}</td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col gap-0.5">
-                            <span className={getStatusBadge(row.status)}>{row.status.toUpperCase()}</span>
+                            <span className={getStatusBadge(getDisplayStatus(row))}>{getDisplayStatus(row).toUpperCase()}</span>
                             {(row.status === 'half-day' || row.status === 'leave') && row.breakdownString && (
                               <span className="text-[9px] font-bold text-muted-foreground/60 pl-1">
                                 ({row.breakdownString})

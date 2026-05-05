@@ -124,10 +124,11 @@ const EmployeeDashboard: React.FC = () => {
       }
 
       if (balanceRes.success && balanceRes.data && balanceRes.data.balance) {
-        const casualRemaining = balanceRes.data.balance.casual?.available ?? 0;
+        const b = balanceRes.data.balance;
+        const totalPaidBalance = (b.cl || 0) + (b.sl || 0) + (b.rl || 0);
         setStats(prev => ({
           ...prev,
-          leaveBalance: casualRemaining.toString()
+          leaveBalance: totalPaidBalance.toString()
         }));
       }
 

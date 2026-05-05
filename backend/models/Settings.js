@@ -58,6 +58,11 @@ const settingsSchema = new mongoose.Schema({
     enum: ['manual', 'auto-after-threshold'],
     default: 'manual',
   },
+  // Leave Policy Settings
+  clPerMonth: { type: Number, default: 1 },
+  maxClPerYear: { type: Number, default: 12 },
+  slPerYear: { type: Number, default: 6 },
+  rlPerYear: { type: Number, default: 2 },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

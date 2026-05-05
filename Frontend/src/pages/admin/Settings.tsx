@@ -12,11 +12,21 @@ const Settings: React.FC = () => {
   const [settings, setSettings] = useState({
     officeStartTime: '09:15',
     officeEndTime: '18:15',
-    lateGracePeriod: 0,
+    lateGraceMinutes: 15,
     halfDayThreshold: 4,
+    minWorkMinutes: 30,
+    autoCheckoutTime: '19:00',
+    maxDailyCredit: 1.0,
+    weekendPolicy: 'holiday',
+    autoBreakMinutes: 0,
+    breakPolicy: 'manual',
     breakDurationMinutes: 60,
     workingDays: [1, 2, 3, 4, 5, 6] // default Mon-Sat
   });
+
+  const [recalcMode, setRecalcMode] = useState<'future_only' | 'range'>('future_only');
+  const [recalcRange, setRecalcRange] = useState({ start: '', end: '' });
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   const fetchSettings = async () => {
     try {
@@ -26,8 +36,14 @@ const Settings: React.FC = () => {
         setSettings({
           officeStartTime: res.data.officeStartTime,
           officeEndTime: res.data.officeEndTime,
-          lateGracePeriod: res.data.lateGracePeriod,
+          lateGraceMinutes: res.data.lateGraceMinutes || res.data.lateGracePeriod || 0,
           halfDayThreshold: res.data.halfDayThreshold,
+          minWorkMinutes: res.data.minWorkMinutes || 30,
+          autoCheckoutTime: res.data.autoCheckoutTime || '19:00',
+          maxDailyCredit: res.data.maxDailyCredit || 1.0,
+          weekendPolicy: res.data.weekendPolicy || 'holiday',
+          autoBreakMinutes: res.data.autoBreakMinutes || 0,
+          breakPolicy: res.data.breakPolicy || 'manual',
           breakDurationMinutes: res.data.breakDurationMinutes || 60,
           workingDays: res.data.workingDays || [1, 2, 3, 4, 5, 6]
         });
@@ -55,6 +71,28 @@ const Settings: React.FC = () => {
       toast.error(error.message || 'Failed to update settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRecalculate = async () => {
+    if (recalcMode === 'range' && (!recalcRange.start || !recalcRange.end)) {
+      return toast.error('Please select date range');
+    }
+
+    try {
+      setIsRecalculating(true);
+      const res = await api.post('/admin/attendance/recalculate', {
+        mode: recalcMode,
+        startDate: recalcRange.start,
+        endDate: recalcRange.end
+      });
+      if (res.success) {
+        toast.success(res.message);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Recalculation failed');
+    } finally {
+      setIsRecalculating(false);
     }
   };
 
@@ -117,8 +155,8 @@ const Settings: React.FC = () => {
                     <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Late Grace Period (Min)</label>
                     <input 
                       type="number" 
-                      value={settings.lateGracePeriod} 
-                      onChange={e => setSettings({...settings, lateGracePeriod: parseInt(e.target.value) || 0})}
+                      value={settings.lateGraceMinutes} 
+                      onChange={e => setSettings({...settings, lateGraceMinutes: parseInt(e.target.value) || 0})}
                       className="input-floating"
                     />
                   </div>
@@ -131,84 +169,132 @@ const Settings: React.FC = () => {
                       className="input-floating"
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground italic pt-2 border-t border-glass-border">Working less than threshold marks record as Half-Day.</p>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Min Work (Min)</label>
+                    <input 
+                      type="number" 
+                      value={settings.minWorkMinutes} 
+                      onChange={e => setSettings({...settings, minWorkMinutes: parseInt(e.target.value) || 0})}
+                      className="input-floating"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Auto Checkout Time</label>
+                    <input 
+                      type="time" 
+                      value={settings.autoCheckoutTime} 
+                      onChange={e => setSettings({...settings, autoCheckoutTime: e.target.value})}
+                      className="input-floating"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Max Daily Credit</label>
+                    <input 
+                      type="number" 
+                      step="0.1"
+                      min="0.5"
+                      max="2.0"
+                      value={settings.maxDailyCredit} 
+                      onChange={e => setSettings({...settings, maxDailyCredit: parseFloat(e.target.value) || 1.0})}
+                      className="input-floating"
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground italic pt-2 border-t border-glass-border">Advanced rules for automated attendance evaluation.</p>
                 </div>
               </div>
 
               {/* Break Policy */}
               <div className="glass-card p-6 space-y-6">
                 <h3 className="text-lg font-bold flex items-center gap-2 text-foreground">
-                  <Coffee className="w-5 h-5 text-success" /> Daily Break Policy
+                  <Coffee className="w-5 h-5 text-success" /> Break Policy
                 </h3>
-                <div>
-                  <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Total Daily Break Allowance (Min)</label>
-                  <div className="flex gap-2 mb-3">
-                    {[30, 45, 60, 90].map(val => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setSettings({...settings, breakDurationMinutes: val})}
-                        className={`flex-1 py-1 rounded-md text-[10px] font-bold border transition-all ${
-                          settings.breakDurationMinutes === val 
-                          ? 'bg-success/20 border-success/30 text-success' 
-                          : 'bg-secondary/50 border-glass-border text-muted-foreground'
-                        }`}
-                      >
-                        {val}m
-                      </button>
-                    ))}
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Break Mode</label>
+                    <select 
+                      value={settings.breakPolicy}
+                      onChange={e => setSettings({...settings, breakPolicy: e.target.value as any})}
+                      className="input-floating py-2"
+                    >
+                      <option value="manual">Manual (Employee Log)</option>
+                      <option value="auto-after-threshold">Auto-Deduct After 4h</option>
+                    </select>
                   </div>
-                  <input 
-                    type="range"
-                    min="15"
-                    max="180"
-                    step="15"
-                    value={settings.breakDurationMinutes}
-                    onChange={e => setSettings({...settings, breakDurationMinutes: parseInt(e.target.value)})}
-                    className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-success"
-                  />
-                  <div className="flex justify-between mt-1 text-[10px] font-bold text-muted-foreground uppercase">
-                    <span>15m</span>
-                    <span className="text-success font-display tracking-widest">{settings.breakDurationMinutes} Minutes Total</span>
-                    <span>180m</span>
+                  {settings.breakPolicy === 'auto-after-threshold' && (
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Auto Break Minutes</label>
+                      <input 
+                        type="number" 
+                        value={settings.autoBreakMinutes} 
+                        onChange={e => setSettings({...settings, autoBreakMinutes: parseInt(e.target.value) || 0})}
+                        className="input-floating"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Total Allowance (Min)</label>
+                    <div className="flex gap-2 mb-3">
+                      {[30, 45, 60, 90].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setSettings({...settings, breakDurationMinutes: val})}
+                          className={`flex-1 py-1 rounded-md text-[10px] font-bold border transition-all ${
+                            settings.breakDurationMinutes === val 
+                            ? 'bg-success/20 border-success/30 text-success' 
+                            : 'bg-secondary/50 border-glass-border text-muted-foreground'
+                          }`}
+                        >
+                          {val}m
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div className="p-3 rounded-lg bg-success/5 border border-success/10">
-                   <p className="text-[10px] text-success leading-relaxed">
-                     Employees can take a <strong>TOTAL of {settings.breakDurationMinutes} minutes</strong> of break across multiple sessions today.
-                     Our automated <strong>BreakMonitor</strong> will alert them if they exceed this limit.
-                   </p>
                 </div>
               </div>
 
-              {/* Working Days */}
+              {/* Weekend Policy */}
               <div className="glass-card p-6 space-y-6">
                 <h3 className="text-lg font-bold flex items-center gap-2 text-foreground">
-                  <Calendar className="w-5 h-5 text-primary" /> Working Days
+                  <Calendar className="w-5 h-5 text-primary" /> Weekend & Days
                 </h3>
-                <div className="flex flex-wrap gap-2">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => {
-                      const isActive = settings.workingDays.includes(idx);
-                      return (
-                          <button
-                            key={day}
-                            type="button"
-                            onClick={() => {
-                                const newDays = isActive 
-                                  ? settings.workingDays.filter(d => d !== idx)
-                                  : [...settings.workingDays, idx].sort((a,b) => a-b);
-                                setSettings({...settings, workingDays: newDays});
-                            }}
-                            className={`px-3 py-2 rounded-xl text-xs font-bold font-display transition-all border ${
-                                isActive 
-                                  ? 'bg-primary/10 text-primary border-primary/20' 
-                                  : 'bg-secondary/5 text-muted-foreground border-glass-border opacity-60'
-                            }`}
-                          >
-                            {day}
-                          </button>
-                      );
-                    })}
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => {
+                        const isActive = settings.workingDays.includes(idx);
+                        return (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                  const newDays = isActive 
+                                    ? settings.workingDays.filter(d => d !== idx)
+                                    : [...settings.workingDays, idx].sort((a,b) => a-b);
+                                  setSettings({...settings, workingDays: newDays});
+                              }}
+                              className={`px-3 py-2 rounded-xl text-xs font-bold font-display transition-all border ${
+                                  isActive 
+                                    ? 'bg-primary/10 text-primary border-primary/20' 
+                                    : 'bg-secondary/5 text-muted-foreground border-glass-border opacity-60'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                        );
+                      })}
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase mb-1.5 block">Weekend Policy</label>
+                    <select 
+                      value={settings.weekendPolicy}
+                      onChange={e => setSettings({...settings, weekendPolicy: e.target.value as any})}
+                      className="input-floating py-2"
+                    >
+                      <option value="holiday">Mark as Holiday (Paid/Free)</option>
+                      <option value="working">Process as Normal Day</option>
+                      <option value="optional">Optional (No Payroll Impact)</option>
+                    </select>
+                  </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground">Statistics ignore unmarked days.</p>
               </div>
@@ -242,11 +328,48 @@ const Settings: React.FC = () => {
              </div>
 
              <div className="p-4 rounded-xl border border-glass-border bg-card/50">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase mb-3 px-1">Policy Notice</h4>
-                <p className="text-xs text-muted-foreground leading-relaxed italic">
-                   Adjusting these values updates the global HR compliance policy.
-                   Notifications will be triggered for any breaches of these rules (Late arrivals, excessive breaks).
-                </p>
+                <h4 className="text-xs font-bold text-muted-foreground uppercase mb-3 px-1 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-warning" /> Maintenance
+                </h4>
+                <div className="space-y-3">
+                   <div className="flex flex-col gap-2">
+                      <select 
+                        value={recalcMode}
+                        onChange={e => setRecalcMode(e.target.value as any)}
+                        className="bg-background/50 border border-glass-border rounded-lg p-2 text-xs"
+                      >
+                         <option value="future_only">From Today Onwards</option>
+                         <option value="range">Specific Date Range</option>
+                      </select>
+                      {recalcMode === 'range' && (
+                        <div className="flex gap-2">
+                          <input 
+                            type="date" 
+                            className="flex-1 bg-background/50 border border-glass-border rounded-lg p-1 text-[10px]"
+                            value={recalcRange.start}
+                            onChange={e => setRecalcRange({...recalcRange, start: e.target.value})}
+                          />
+                          <input 
+                            type="date" 
+                            className="flex-1 bg-background/50 border border-glass-border rounded-lg p-1 text-[10px]"
+                            value={recalcRange.end}
+                            onChange={e => setRecalcRange({...recalcRange, end: e.target.value})}
+                          />
+                        </div>
+                      )}
+                      <button 
+                        type="button"
+                        disabled={isRecalculating}
+                        onClick={handleRecalculate}
+                        className="w-full py-2 bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning text-[10px] font-bold rounded-lg transition-all"
+                      >
+                        {isRecalculating ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "RECALCULATE ATTENDANCE"}
+                      </button>
+                   </div>
+                   <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                      Force re-evaluation of all attendance records based on current policy settings.
+                   </p>
+                </div>
              </div>
           </div>
         </div>
