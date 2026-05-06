@@ -3,8 +3,6 @@ const router = express.Router();
 const {
   checkIn,
   checkOut,
-  startBreak,
-  endBreak,
   getTodayAttendance,
   getAttendanceHistory,
   getAllAttendance,
@@ -98,6 +96,6 @@ router.get('/admin/report', isAdmin, reportValidation, getAttendanceReport);
  */
 router.get('/admin/stats', isAdmin, getTodayStats);
 
-router.get('/admin/breaks', isAdmin, getBreakReport);
+router.get('/admin/breaks', isAdmin, getBreakHistory);
 
 module.exports = router;

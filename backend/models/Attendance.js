@@ -82,6 +82,19 @@ const attendanceSchema = new mongoose.Schema(
     isManualOverride: {
       type: Boolean,
       default: false
+    },
+    // Corruption & Audit Flags
+    isCorrupted: {
+      type: Boolean,
+      default: false
+    },
+    corruptionReason: {
+      type: String,
+      default: null
+    },
+    corruptedAt: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -249,12 +262,71 @@ attendanceSchema.methods.getBreakdownString = function () {
   return components.join(' + ');
 };
 
+// --- Immutable Calculation Helpers ---
+attendanceSchema.methods.getBreakMinutes = function() {
+  return (this.breaks || []).reduce((sum, b) => sum + (b.duration || 0), 0);
+};
+
+attendanceSchema.methods.getWorkingMinutes = function(settings = null) {
+  if (!this.checkIn || !this.checkOut) return 0;
+  const rawTotal = Math.floor((new Date(this.checkOut) - new Date(this.checkIn)) / (1000 * 60));
+  const breakTime = this.getBreakMinutes();
+  let working = rawTotal - breakTime;
+
+  // Auto Break logic
+  if (settings?.breakPolicy === 'auto-after-threshold') {
+    const threshold = (settings.halfDayThreshold || 4) * 60;
+    if (working >= threshold) {
+      working -= (settings.autoBreakMinutes || 0);
+    }
+  }
+  return Math.max(0, working);
+};
+
+
 // Pre-save middleware to auto-calculate fields
 attendanceSchema.pre('save', function (next) {
-  // Calculate total break time
-  const oldBreaksTotal = (this.breaks || []).reduce((total, b) => total + (b.duration || 0), 0);
-  const newBreakTotal = this.break?.durationMinutes || 0;
-  this.totalBreakTime = oldBreaksTotal + newBreakTotal;
+  // 🛡️ CORRUPTION ISOLATION: Stop all additive logic.
+  // We strictly recalculate from the breaks array.
+  const arrayTotal = this.getBreakMinutes();
+  
+  // Sync legacy compatibility fields (READ-ONLY VIEW)
+  // This ensures old reports still work but they are powered by the array.
+  this.totalBreakTime = arrayTotal;
+  
+  // --- STRICT VALIDATION ---
+  const activeBreaks = (this.breaks || []).filter(b => !b.breakEnd);
+  if (activeBreaks.length > 1) {
+    this.isCorrupted = true;
+    this.corruptionReason = `Multiple active breaks: ${activeBreaks.length}`;
+    this.corruptedAt = new Date();
+  }
+
+  (this.breaks || []).forEach(b => {
+    if (b.duration < 0) {
+      this.isCorrupted = true;
+      this.corruptionReason = "Negative break duration detected";
+      this.corruptedAt = new Date();
+      b.duration = 0; // Sanitize
+    }
+  });
+  // -------------------------
+
+  // Update the legacy break object to mirror the array state
+  const activeBreak = activeBreaks[0];
+  this.break.isOnBreak = !!activeBreak;
+  if (activeBreak) {
+    this.break.startTime = activeBreak.breakStart;
+  }
+  // The 'durationMinutes' in legacy object will now just be the last completed break's duration
+  if (this.breaks && this.breaks.length > 0) {
+    const lastCompleted = [...this.breaks].reverse().find(b => b.breakEnd);
+    if (lastCompleted) {
+        this.break.durationMinutes = lastCompleted.duration;
+    }
+  }
+
+
 
   // Calculate working hours if both check-in and check-out exist
   if (this.checkIn && this.checkOut) {

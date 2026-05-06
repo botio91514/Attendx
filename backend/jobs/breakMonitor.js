@@ -21,34 +21,42 @@ const startBreakMonitorJob = () => {
       const { toIST } = require('../utils/timeUtils');
       const now = toIST(new Date());
 
-      // Find employees currently on break who haven't been alerted yet
+      // 1. Find employees currently on break (using authoritative array)
       const activeBreaks = await Attendance.find({
         date: today,
-        'break.isOnBreak': true,
-        'break.alertSent': false
+        'breaks.breakEnd': null
       }).populate('userId', 'name email');
 
+
       for (const record of activeBreaks) {
-        // Fallback: If legacy startTime is missing, get it from the breaks array
-        let startTime = record.break.startTime;
-        if (!startTime && record.breaks && record.breaks.length > 0) {
-          const ongoing = record.breaks.find(b => !b.breakEnd);
-          if (ongoing) {
-            startTime = ongoing.breakStart;
-            // Patch the record so we don't have to do this fallback every minute
-            record.break.startTime = startTime;
-            await record.save();
-          }
-        }
+        const ongoing = record.breaks.find(b => !b.breakEnd);
+        if (!ongoing) continue;
 
-        if (!startTime) {
-          console.warn(`[BreakMonitor] Record for ${record.userId?.name} is on break but missing startTime. Skipping.`);
-          continue;
-        }
-
+        const startTime = ongoing.breakStart;
         const startTimeDate = new Date(startTime);
         const currentSessionMinutes = Math.floor((now - startTimeDate) / 60000);
-        const totalElapsedMinutes = (record.break.durationMinutes || 0) + currentSessionMinutes;
+        
+        // 🛡️ STALE SESSION DETECTION (Quarantine)
+        // If a break is active for > 6 hours, mark as corrupted and auto-close (safety)
+        if (currentSessionMinutes > 360) {
+           console.warn(`[Audit] Stale break session detected for ${record.userId?.name}. Quarantining.`);
+           record.isCorrupted = true;
+           record.corruptionReason = `Stale break: Active for ${currentSessionMinutes}m`;
+           record.corruptedAt = new Date();
+           
+           // Force close at policy limit to isolate payroll damage
+           ongoing.breakEnd = now;
+           ongoing.duration = allowedMinutes;
+           record.break.isOnBreak = false;
+           await record.save();
+           continue;
+        }
+
+        const totalElapsedMinutes = record.getBreakMinutes() + currentSessionMinutes;
+
+        // Skip if already alerted
+        if (record.break.alertSent) continue;
+
 
         if (totalElapsedMinutes > allowedMinutes) {
           // 1. Mark as exceeded and alert sent (prevent repeat)

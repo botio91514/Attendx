@@ -1,5 +1,7 @@
 const { validationResult, body, query } = require('express-validator');
 const Attendance = require('../models/Attendance');
+const breakService = require('../services/breakService');
+
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
@@ -203,17 +205,13 @@ const checkOut = async (req, res, next) => {
     }
 
     // --- AUTO-END BREAK ON CHECKOUT (UNIFIED FIX) ---
-    // Handle the current ongoing break in the breaks array
-    const ongoingBreakIndex = attendance.breaks.findIndex(b => !b.breakEnd);
-    if (ongoingBreakIndex !== -1) {
-      const autoBreakEnd = getCurrentISTTime();
-      const breakStart = attendance.breaks[ongoingBreakIndex].breakStart;
-      const duration = Math.floor((autoBreakEnd - new Date(breakStart)) / (1000 * 60));
-      
-      attendance.breaks[ongoingBreakIndex].breakEnd = autoBreakEnd;
-      attendance.breaks[ongoingBreakIndex].duration = duration;
+    try {
+      await breakService.endBreak(attendance, now);
+    } catch (e) {
+      // Ignore if no break found
     }
     // --- END AUTO-END BREAK ---
+
 
     // Fetch dynamic settings
     const settings = await Settings.getSettings();
@@ -221,19 +219,10 @@ const checkOut = async (req, res, next) => {
     // Update check-out
     attendance.checkOut = now;
 
-    // --- RECALCULATE NET WORKING TIME ---
-    const checkInTime = new Date(attendance.checkIn);
-    const checkOutTime = now;
-    const grossMinutes = Math.floor((checkOutTime - checkInTime) / 60000);
-    
-    // Total break time is the sum of all completed breaks
-    const totalBreakMinutes = attendance.breaks.reduce((sum, b) => sum + (b.duration || 0), 0);
-    attendance.totalBreakTime = totalBreakMinutes;
-    attendance.totalWorkingHours = Math.max(0, grossMinutes - totalBreakMinutes);
-    // --- END RECALCULATE ---
     // Attach settings for pre-save middleware
     attendance._settings = settings;
     await attendance.save();
+
 
     // ── Auto-pause running tasks on checkout ──────────────
     try {
@@ -308,186 +297,9 @@ const checkOut = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Start a break
- * @route   POST /api/attendance/break/start
- * @access  Private
- */
-const startBreak = async (req, res, next) => {
-  try {
-    const userId = req.user._id;
-    const today = getISTDateString();
-    const now = getCurrentISTTime();
+// Unused startBreak and endBreak logic removed.
+// Logic is now centralized in breakController and breakService.
 
-    // Find today's attendance record
-    const attendance = await Attendance.findOne({ userId, date: today });
-
-    if (!attendance || !attendance.checkIn) {
-      return res.status(400).json({
-        success: false,
-        message: 'You need to check in first',
-        errors: [],
-      });
-    }
-
-    if (attendance.checkOut) {
-      return res.status(400).json({
-        success: false,
-        message: 'You have already checked out',
-        errors: [],
-      });
-    }
-
-    // Check if there's already an ongoing break
-    const ongoingBreak = attendance.breaks.find((b) => !b.breakEnd);
-    if (ongoingBreak) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have an ongoing break',
-        errors: [],
-      });
-    }
-
-    // Fetch dynamic settings
-    const settings = await Settings.getSettings();
-
-    // Add new break
-    attendance.breaks.push({
-      breakStart: now,
-    });
-
-    // Attach settings for pre-save middleware
-    attendance._settings = settings;
-    await attendance.save();
-
-    // ── Auto-pause running tasks on break start ──────────────
-    try {
-      const Task = require("../models/Task");
-      const WorkSession = require("../models/WorkSession");
-
-      const activeTasks = await Task.find({
-        assignedTo: req.user._id,
-        status: "in-progress"
-      });
-
-      for (const task of activeTasks) {
-        const session = await WorkSession.findOne({
-          taskId: task._id,
-          endTime: null
-        });
-        if (session) {
-          session.endTime = toIST(new Date());
-          session.duration = Math.floor((session.endTime - session.startTime) / 1000);
-          await session.save();
-          // Use findByIdAndUpdate to bypass validation for older tasks
-          await Task.findByIdAndUpdate(task._id, {
-            $inc: { totalTime: session.duration },
-            $set: { status: "paused" }
-          });
-        } else {
-          await Task.findByIdAndUpdate(task._id, { $set: { status: "paused" } });
-        }
-      }
-    } catch (taskErr) {
-      console.error("Task auto-pause error on break start:", taskErr);
-    }
-    // ─────────────────────────────────────────────────────
-
-    res.status(200).json({
-      success: true,
-      data: {
-        break: attendance.breaks[attendance.breaks.length - 1],
-      },
-      message: 'Break started',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    End a break
- * @route   POST /api/attendance/break/end
- * @access  Private
- */
-const endBreak = async (req, res, next) => {
-  try {
-    const userId = req.user._id;
-    const now = toIST(new Date());
-    const today = getISTDateString();
-    const attendance = await Attendance.findOne({ userId, date: today });
-
-    if (!attendance || !attendance.checkIn) {
-      return res.status(400).json({
-        success: false,
-        message: 'No check-in record found',
-        errors: [],
-      });
-    }
-
-    // Find ongoing break
-    const ongoingBreakIndex = attendance.breaks.findIndex((b) => !b.breakEnd);
-
-    if (ongoingBreakIndex === -1) {
-      return res.status(400).json({
-        success: false,
-        message: 'No ongoing break found',
-        errors: [],
-      });
-    }
-
-    // End the break
-    const breakStart = attendance.breaks[ongoingBreakIndex].breakStart;
-    const duration = Math.floor((now - new Date(breakStart)) / (1000 * 60));
-
-    // Fetch dynamic settings
-    const settings = await Settings.getSettings();
-
-    attendance.breaks[ongoingBreakIndex].breakEnd = now;
-    attendance.breaks[ongoingBreakIndex].duration = duration;
-
-    // Attach settings for pre-save middleware
-    attendance._settings = settings;
-    await attendance.save();
-
-    // ── Auto-resume tasks on break end ──────────────
-    try {
-      const Task = require("../models/Task");
-      const WorkSession = require("../models/WorkSession");
-
-      // Resume the most recently paused task for this user
-      const lastPausedTask = await Task.findOne({
-        assignedTo: req.user._id,
-        status: "paused"
-      }).sort({ updatedAt: -1 });
-
-      if (lastPausedTask) {
-        // Create a new work session for the resumed task
-        await WorkSession.create({
-          taskId: lastPausedTask._id,
-          userId: req.user._id,
-          startTime: toIST()
-        });
-
-        await Task.findByIdAndUpdate(lastPausedTask._id, { $set: { status: "in-progress" } });
-      }
-    } catch (taskErr) {
-      console.error("Task auto-resume error on break end:", taskErr);
-    }
-    // ─────────────────────────────────────────────────────
-
-    res.status(200).json({
-      success: true,
-      data: {
-        break: attendance.breaks[ongoingBreakIndex],
-        totalBreakTime: attendance.totalBreakTime,
-      },
-      message: 'Break ended',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 /**
  * @desc    Get today's attendance record
@@ -1140,8 +952,6 @@ const reportValidation = [
 module.exports = {
   checkIn,
   checkOut,
-  startBreak,
-  endBreak,
   getTodayAttendance,
   getAttendanceHistory,
   getAllAttendance,
@@ -1154,3 +964,5 @@ module.exports = {
   historyValidation,
   reportValidation,
 };
+
+
