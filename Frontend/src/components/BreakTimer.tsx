@@ -30,8 +30,12 @@ const BreakTimer: React.FC<BreakTimerProps> = ({ onStatusChange }) => {
   const breakStartTimeRef = useRef<string | null>(null);
 
   // Helper: calculate elapsed seconds from a start time string
-  const calcElapsed = (startTimeStr: string) => {
-    const start = parseDBDate(startTimeStr)!.getTime();
+  const calcElapsed = (startTimeStr: string | null) => {
+    if (!startTimeStr) return 0;
+    const parsed = parseDBDate(startTimeStr);
+    if (!parsed) return 0;
+    
+    const start = parsed.getTime();
     const now = Date.now();
     return Math.max(0, Math.floor((now - start) / 1000));
   };
