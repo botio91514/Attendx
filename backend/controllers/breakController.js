@@ -41,7 +41,7 @@ const startBreak = async (req, res, next) => {
     const breakStartTime = toIST(new Date());
     
     // 2. Atomic update to start a new break in the breaks array
-    const attendance = await Attendance.findOneAndUpdate(
+    const updatedRecord = await Attendance.findOneAndUpdate(
       { 
         userId, 
         date: today, 
@@ -66,7 +66,7 @@ const startBreak = async (req, res, next) => {
       { new: true }
     );
 
-    if (!attendance) {
+    if (!updatedRecord) {
       // Check if they are actually already on break to give a better message
       const checkCurrent = await Attendance.findOne({ userId, date: today });
       if (checkCurrent && checkCurrent.breaks.some(b => !b.breakEnd)) {
@@ -77,7 +77,7 @@ const startBreak = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: attendance,
+      data: updatedRecord,
       message: 'Break started successfully',
     });
   } catch (error) {
