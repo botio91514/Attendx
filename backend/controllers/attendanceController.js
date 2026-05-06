@@ -875,6 +875,169 @@ const getAttendanceReport = async (req, res, next) => {
  * @route   GET /api/attendance/admin/stats
  * @access  Private/Admin
  */
+/**
+ * @desc    Get detailed break report (Admin only)
+ * @route   GET /api/attendance/admin/breaks
+ * @access  Private/Admin
+ */
+const getBreakReport = async (req, res, next) => {
+  try {
+    const { startDate, endDate, department, userId, search, page = 1, limit = 100 } = req.query;
+    
+    // Fetch dynamic policy limit from settings
+    const Settings = require('../models/Settings');
+    const settings = await Settings.findOne();
+    const currentOfficePolicyLimit = settings?.breakDurationMinutes || 30;
+    
+    // Default to last 7 days if no range provided
+    const end = endDate || getISTDateString();
+    let start = startDate;
+    if (!start) {
+      const d = new Date(toIST(new Date()));
+      d.setUTCDate(d.getUTCDate() - 7);
+      start = getISTDateString(d);
+    }
+
+    // 1. Build Query: Records with either the new array OR the old break object
+    const query = {
+      date: { $gte: start, $lte: end },
+      $or: [
+        { 'breaks.0': { $exists: true } },
+        { 'break.startTime': { $ne: null } }
+      ]
+    };
+
+    if (userId) query.userId = userId;
+
+    // 2. Filter employees by department or search term
+    let targetUserIds = null;
+    if ((department && department !== 'All') || search) {
+      const userQuery = { role: 'employee' };
+      if (department && department !== 'All') userQuery.department = department;
+      if (search) userQuery.name = { $regex: search, $options: 'i' };
+      
+      const users = await User.find(userQuery).select('_id');
+      targetUserIds = users.map(u => u._id);
+      
+      if (userId) {
+        if (!targetUserIds.some(id => id.toString() === userId)) {
+          return res.status(200).json({ success: true, data: { breaks: [], stats: {} } });
+        }
+      } else {
+        query.userId = { $in: targetUserIds };
+      }
+    }
+
+    // 3. Fetch Records
+    const attendanceRecords = await Attendance.find(query)
+      .populate('userId', 'name employeeId department designation')
+      .sort({ date: -1 });
+
+    // 4. Flatten and Format Breaks
+    const flattenedBreaks = [];
+    let totalMinutes = 0;
+    const userStats = {};
+
+    attendanceRecords.forEach(record => {
+      // 🛡️ Safety: If user is missing, show as Unknown but preserve the data
+      const emp = record.userId || { 
+        name: 'System Record', 
+        employeeId: 'N/A', 
+        department: 'Unknown',
+        _id: record.userId // Keep the ID for grouping
+      };
+
+      const processBreak = (startTime, endTime, rawDuration, sourceId) => {
+        // 🛡️ Safety Valve: Clamp absurd durations (e.g., 7-day breaks) to policy limit
+        let duration = rawDuration || 0;
+        if (duration > 1440) { // More than 24 hours
+           duration = currentOfficePolicyLimit; 
+        }
+        
+        totalMinutes += duration;
+
+        const userIdStr = emp._id ? emp._id.toString() : 'unknown';
+        if (!userStats[userIdStr]) {
+          userStats[userIdStr] = { name: emp.name, total: 0, count: 0 };
+        }
+        userStats[userIdStr].total += duration;
+        userStats[userIdStr].count += 1;
+
+        flattenedBreaks.push({
+          id: sourceId,
+          date: record.date,
+          employeeName: emp.name,
+          employeeId: emp.employeeId,
+          department: emp.department,
+          startTime: startTime,
+          endTime: endTime,
+          duration: duration,
+          status: endTime ? 'completed' : 'ongoing'
+        });
+      };
+
+      // 🛡️ Merge Logic: New Array + Legacy Fallback
+      if (record.breaks && record.breaks.length > 0) {
+        record.breaks.forEach(br => {
+          processBreak(br.breakStart, br.breakEnd, br.duration, br._id);
+        });
+      }
+      
+      if (record.break && record.break.startTime) {
+        const isDuplicate = record.breaks?.some(br => 
+          new Date(br.breakStart).getTime() === new Date(record.break.startTime).getTime()
+        );
+        
+        if (!isDuplicate) {
+          processBreak(
+            record.break.startTime, 
+            record.break.endTime, 
+            record.break.durationMinutes, 
+            `legacy-${record._id}`
+          );
+        }
+      }
+    });
+
+    // Sort by date and time (most recent first)
+    flattenedBreaks.sort((a, b) => {
+      const dateCompare = b.date.localeCompare(a.date);
+      if (dateCompare !== 0) return dateCompare;
+      return new Date(b.startTime) - new Date(a.startTime);
+    });
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = flattenedBreaks.slice(skip, skip + parseInt(limit));
+
+    // Summary Stats
+    const topBreakUsers = Object.values(userStats)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        breaks: paginated,
+        stats: {
+          totalBreaks: flattenedBreaks.length,
+          totalDurationMinutes: totalMinutes,
+          averageBreakMinutes: flattenedBreaks.length > 0 ? Math.round(totalMinutes / flattenedBreaks.length) : 0,
+          topUsers: topBreakUsers,
+          policyLimit: currentOfficePolicyLimit
+        },
+        pagination: {
+          total: flattenedBreaks.length,
+          page: parseInt(page),
+          pages: Math.ceil(flattenedBreaks.length / parseInt(limit))
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getTodayStats = async (req, res, next) => {
   try {
     const today = getTodayDate();
@@ -983,6 +1146,7 @@ module.exports = {
   getAttendanceHistory,
   getAllAttendance,
   getAttendanceReport,
+  getBreakReport,
   getTodayStats,
   processComprehensiveAttendance,
   checkInValidation,

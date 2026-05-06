@@ -38,23 +38,36 @@ const startBreak = async (req, res, next) => {
       });
     }
 
-    // 2. Atomic update to set break start
+    // 2. Atomic update to start a new break in the breaks array
     const updatedAttendance = await Attendance.findOneAndUpdate(
-      { userId, date: today, 'break.isOnBreak': { $ne: true } },
+      { 
+        userId, 
+        date: today, 
+        'breaks.breakEnd': { $ne: null }, // Ensure no ongoing break
+        'break.isOnBreak': { $ne: true }  // Compatibility check
+      },
       {
+        $push: {
+          breaks: {
+            breakStart: toIST(new Date()),
+            breakEnd: null,
+            duration: 0
+          }
+        },
         $set: {
-          'break.startTime': toIST(new Date()),
-          'break.isOnBreak': true
+          'break.isOnBreak': true // Keep flag for UI status checks
         }
       },
       { new: true }
     );
 
     if (!updatedAttendance) {
-      return res.status(400).json({
-        success: false,
-        message: 'Could not start break. It might have been started already.',
-      });
+      // Check if they are actually already on break to give a better message
+      const checkCurrent = await Attendance.findOne({ userId, date: today });
+      if (checkCurrent && checkCurrent.breaks.some(b => !b.breakEnd)) {
+        return res.status(400).json({ success: false, message: 'You already have an ongoing break' });
+      }
+      return res.status(400).json({ success: false, message: 'Could not start break.' });
     }
 
     res.status(200).json({
@@ -75,64 +88,52 @@ const startBreak = async (req, res, next) => {
 const endBreak = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const { toIST } = require('../utils/timeUtils');
-    const today = getTodayDate();
+    const { toIST, getISTDateString } = require('../utils/timeUtils');
+    const today = getISTDateString();
 
     const attendance = await Attendance.findOne({ userId, date: today });
-    const breakData = attendance?.break || {};
-
-    if (!attendance || !breakData.isOnBreak) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are not currently on a break',
-      });
+    if (!attendance) {
+      return res.status(400).json({ success: false, message: 'No attendance record found' });
     }
 
-    if (!breakData.startTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'No active break found',
-      });
+    // Find the ongoing break (where breakEnd is null)
+    const ongoingBreakIndex = attendance.breaks.findIndex(b => !b.breakEnd);
+
+    if (ongoingBreakIndex === -1) {
+      // Clean up flag if out of sync
+      if (attendance.break.isOnBreak) {
+        attendance.break.isOnBreak = false;
+        await attendance.save();
+      }
+      return res.status(400).json({ success: false, message: 'No ongoing break found' });
     }
 
     const endTime = toIST(new Date());
-    const startTime = new Date(breakData.startTime); // Already shifted IST-as-UTC
+    const startTime = new Date(attendance.breaks[ongoingBreakIndex].breakStart);
+    const duration = Math.max(0, Math.floor((endTime - startTime) / 60000));
+
+    // Update the specific break in the array
+    attendance.breaks[ongoingBreakIndex].breakEnd = endTime;
+    attendance.breaks[ongoingBreakIndex].duration = duration;
     
-    // Difference between two shifted objects is correct
-    const sessionDurationMinutes = Math.max(0, Math.floor((endTime - startTime) / 60000));
-    const currentTotalMinutes = (breakData.durationMinutes || 0) + sessionDurationMinutes;
+    // Update legacy flag and total stats
+    attendance.break.isOnBreak = false;
+    attendance.break.endTime = endTime;
+    
+    // Total break time is the sum of all completed breaks
+    const totalBreakMinutes = attendance.breaks.reduce((sum, b) => sum + (b.duration || 0), 0);
+    attendance.totalBreakTime = totalBreakMinutes;
+    attendance.break.durationMinutes = totalBreakMinutes;
 
-    // Fetch policy
-    const settings = await Settings.getSettings();
-    const policyLimit = settings.breakDurationMinutes || 60;
-    const exceededPolicy = currentTotalMinutes > policyLimit;
-
-    // Atomic update to end break and accumulate time
-    const updatedAttendance = await Attendance.findOneAndUpdate(
-      { userId, date: today, 'break.isOnBreak': true },
-      {
-        $set: {
-          'break.endTime': endTime, // Use the already shifted endTime
-          'break.isOnBreak': false,
-          'break.durationMinutes': currentTotalMinutes,
-          'break.exceededPolicy': exceededPolicy
-        }
-      },
-      { new: true }
-    );
-
-    // After ending break, recalculate totalBreakTime for compatibility with existing system
-    // Also recalculate totalWorkingHours if checked out
-    if (updatedAttendance) {
-      updatedAttendance.totalBreakTime = updatedAttendance.break.durationMinutes;
-      if (updatedAttendance.checkIn && updatedAttendance.checkOut) {
-        const checkOut = new Date(updatedAttendance.checkOut);
-        const checkIn = new Date(updatedAttendance.checkIn);
-        const totalMin = Math.floor((checkOut - checkIn) / 60000);
-        updatedAttendance.totalWorkingHours = totalMin - updatedAttendance.totalBreakTime;
-      }
-      await updatedAttendance.save();
+    // Recalculate working hours if checked out
+    if (attendance.checkIn && attendance.checkOut) {
+      const checkOut = new Date(attendance.checkOut);
+      const checkIn = new Date(attendance.checkIn);
+      const grossMinutes = Math.floor((checkOut - checkIn) / 60000);
+      attendance.totalWorkingHours = Math.max(0, grossMinutes - totalBreakMinutes);
     }
+
+    await attendance.save();
 
     res.status(200).json({
       success: true,

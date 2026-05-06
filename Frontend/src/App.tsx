@@ -25,6 +25,7 @@ import AdminHolidays from "@/pages/admin/Holidays";
 import Payroll from "@/pages/admin/Payroll";
 import AdminEmployeeProfile from "@/pages/admin/AdminEmployeeProfilePage";
 import AdminBreakHistory from "@/pages/admin/BreakHistory";
+import BreakIntelligence from "@/pages/admin/BreakIntelligence";
 import { TasksPage } from "@/pages/employee/TasksPage";
 import { AdminTasksPage } from "@/pages/admin/AdminTasksPage";
 import { EmployeeActivityPage } from "@/pages/admin/EmployeeActivityPage";
@@ -88,7 +89,7 @@ const AppWithAuth = () => {
               <Route path="/admin/holidays" element={<AdminHolidays />} />
               <Route path="/admin/announcements" element={<Announcements />} />
               <Route path="/admin/payroll" element={<Payroll />} />
-              <Route path="/admin/breaks" element={<AdminBreakHistory />} />
+              <Route path="/admin/breaks" element={<BreakIntelligence />} />
               <Route path="/admin/register" element={<RegisterEmployee />} />
               <Route path="/admin/tasks" element={<AdminTasksPage />} />
               <Route path="/admin/employee/:employeeId/activity" element={<EmployeeActivityPage />} />

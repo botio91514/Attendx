@@ -10,6 +10,7 @@ const {
   getAllAttendance,
   getAttendanceReport,
   getTodayStats,
+  getBreakReport,
   historyValidation,
   reportValidation,
 } = require('../controllers/attendanceController');
@@ -97,6 +98,6 @@ router.get('/admin/report', isAdmin, reportValidation, getAttendanceReport);
  */
 router.get('/admin/stats', isAdmin, getTodayStats);
 
-router.get('/admin/breaks', isAdmin, getBreakHistory);
+router.get('/admin/breaks', isAdmin, getBreakReport);
 
 module.exports = router;

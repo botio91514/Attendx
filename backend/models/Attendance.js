@@ -134,7 +134,13 @@ attendanceSchema.methods.determineStatus = function (settings = null) {
 
   // 2. Manual Override (Priority 2)
   if (this.isManualOverride || this._isManualStatus) {
-    return { status: this.status, workFraction: this.workFraction };
+    let fraction = this.workFraction;
+    // 🛡️ SYNC RULE: If status is set manually but fraction is 0/missing, derive it
+    if (!fraction || fraction === 0) {
+      if (this.status === 'present' || this.status === 'late') fraction = 1.0;
+      else if (this.status === 'half-day') fraction = 0.5;
+    }
+    return { status: this.status, workFraction: fraction };
   }
 
   // 3. Auto-Checkout Implementation
@@ -262,9 +268,26 @@ attendanceSchema.pre('save', function (next) {
   this.workFraction = autoWorkFraction;
 
   // Only update status if it's NOT a manual override
-  // We check both the persistent flag and the temporary lifecycle flag
   if (!this.isManualOverride && !this._isManualStatus) {
     this.status = autoStatus;
+  }
+  // 🛡️ SYNC RULE: Auto-balance LWP for Half-Days/Partial Days
+  // If status is not absent/holiday, we expect a full 1.0 day credit.
+  if (['present', 'late', 'half-day', 'leave'].includes(this.status)) {
+    const currentWork = this.workFraction || 0;
+    const meta = this.leaveMeta || { cl: 0, sl: 0, rl: 0, lwp: 0 };
+    const currentPaidLeave = (meta.cl || 0) + (meta.sl || 0) + (meta.rl || 0);
+    const currentLWP = (meta.lwp || 0);
+    
+    const totalCredit = currentWork + currentPaidLeave + currentLWP;
+    
+    // If there is a gap (e.g., 0.5 work + 0 leave), fill it with LWP automatically
+    if (totalCredit < 1.0) {
+      const gap = 1.0 - (currentWork + currentPaidLeave);
+      if (gap > 0) {
+        this.leaveMeta.lwp = parseFloat(gap.toFixed(2));
+      }
+    }
   }
 
   next();
