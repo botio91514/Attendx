@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { logAudit } = require('../utils/auditLogger');
 const { triggerAbsentReschedule } = require('../jobs/autoCheckoutReminder');
 
+
 /**
  * @desc    Get current office settings
  * @route   GET /api/settings
@@ -135,6 +136,7 @@ const updateSettings = async (req, res, next) => {
 
       broadcastUpdate().catch(err => console.error('Policy Update Broadcast failed:', err));
     }
+    // --- END EMAIL NOTIFICATION ---
 
     // --- DYNAMIC CRON RESCHEDULE (ADDED) ---
     // If office timing or grace period changed, re-schedule the absent alert job
@@ -142,7 +144,7 @@ const updateSettings = async (req, res, next) => {
       triggerAbsentReschedule().catch(err => console.error('Absent Reschedule failed:', err));
     }
     // --- END DYNAMIC CRON RESCHEDULE ---
-    // --- END EMAIL NOTIFICATION ---
+
 
   } catch (error) {
     next(error);
