@@ -3,6 +3,7 @@ const { sendEmail } = require('../utils/emailService');
 const { policyChangeTemplate } = require('../utils/emailTemplates');
 const User = require('../models/User');
 const { logAudit } = require('../utils/auditLogger');
+const { triggerAbsentReschedule } = require('../jobs/autoCheckoutReminder');
 
 /**
  * @desc    Get current office settings
@@ -134,6 +135,13 @@ const updateSettings = async (req, res, next) => {
 
       broadcastUpdate().catch(err => console.error('Policy Update Broadcast failed:', err));
     }
+
+    // --- DYNAMIC CRON RESCHEDULE (ADDED) ---
+    // If office timing or grace period changed, re-schedule the absent alert job
+    if (changes.some(c => ['Office Start Time', 'Late Grace Period'].includes(c.type))) {
+      triggerAbsentReschedule().catch(err => console.error('Absent Reschedule failed:', err));
+    }
+    // --- END DYNAMIC CRON RESCHEDULE ---
     // --- END EMAIL NOTIFICATION ---
 
   } catch (error) {

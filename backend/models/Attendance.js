@@ -122,7 +122,7 @@ attendanceSchema.methods.calculateWorkingHours = function (settings = null) {
 // Method to determine status and work fraction based on strict rules
 attendanceSchema.methods.determineStatus = function (settings = null) {
   // 1. Check Working Days / Weekend Policy (Priority 1)
-  const dayOfWeek = new Date(this.date).getDay();
+  const dayOfWeek = new Date(this.date).getUTCDay();
   const isWorkingDay = settings?.workingDays?.includes(dayOfWeek);
 
   if (!isWorkingDay) {

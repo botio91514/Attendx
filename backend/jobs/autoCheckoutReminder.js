@@ -217,7 +217,7 @@ const startAbsentAlertJob = async () => {
       const istDeadline = toIST();
       istDeadline.setUTCHours(startHour, startMin + graceMinutes + 5, 0, 0);
 
-      if (istNow > istDeadline && isTodayWorkingDay(settings.workingDays)) {
+      if (istNow.getTime() > istDeadline.getTime() && isTodayWorkingDay(settings.workingDays)) {
         console.log('🔄 [CRON] Server started after today\'s deadline. Running catch-up Absent Alert check...');
         const deadlineStr = `${String(startHour).padStart(2, '0')}:${String(startMin + graceMinutes + 5).padStart(2, '0')}`;
         await runAbsentAlertCheck(settings, deadlineStr);
@@ -241,6 +241,7 @@ const startAbsentAlertJob = async () => {
   await runCatchUpCheck();
 
   console.log('🚀 [CRON] Absent Alert Job registered.');
+  return scheduleAbsentCheck;
 };
 
 const runAbsentAlertCheck = async (settings, deadlineStr) => {
@@ -484,8 +485,17 @@ const startAutoCheckoutJob = () => {
 };
 
 
+let triggerReschedule = null;
+
 module.exports = { 
   startCheckoutReminderJob, 
-  startAbsentAlertJob, 
+  startAbsentAlertJob: async () => {
+    triggerReschedule = await startAbsentAlertJob();
+  },
+  triggerAbsentReschedule: async () => {
+    if (triggerReschedule) {
+      await triggerReschedule();
+    }
+  },
   startAutoCheckoutJob 
 };

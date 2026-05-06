@@ -113,7 +113,7 @@ const getPayrollSummary = async (req, res, next) => {
       let count = 0;
       let curr = new Date(from);
       while (curr <= to) {
-        const day = curr.getDay();
+        const day = curr.getUTCDay();
         // Check if the day is in the company's working days array AND not a public holiday
         if (workingDaysConfig.includes(day) && !holidayDates.includes(curr.toISOString().split('T')[0])) {
           count++;
