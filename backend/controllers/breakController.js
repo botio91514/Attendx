@@ -38,8 +38,10 @@ const startBreak = async (req, res, next) => {
       });
     }
 
+    const breakStartTime = toIST(new Date());
+    
     // 2. Atomic update to start a new break in the breaks array
-    const updatedAttendance = await Attendance.findOneAndUpdate(
+    const attendance = await Attendance.findOneAndUpdate(
       { 
         userId, 
         date: today, 
@@ -49,19 +51,22 @@ const startBreak = async (req, res, next) => {
       {
         $push: {
           breaks: {
-            breakStart: toIST(new Date()),
+            breakStart: breakStartTime,
             breakEnd: null,
             duration: 0
           }
         },
         $set: {
-          'break.isOnBreak': true // Keep flag for UI status checks
+          'break.isOnBreak': true, // Keep flag for UI status checks
+          'break.startTime': breakStartTime, // SYNC for BreakMonitor
+          'break.alertSent': false,
+          'break.exceededPolicy': false
         }
       },
       { new: true }
     );
 
-    if (!updatedAttendance) {
+    if (!attendance) {
       // Check if they are actually already on break to give a better message
       const checkCurrent = await Attendance.findOne({ userId, date: today });
       if (checkCurrent && checkCurrent.breaks.some(b => !b.breakEnd)) {
@@ -72,7 +77,7 @@ const startBreak = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: updatedAttendance,
+      data: attendance,
       message: 'Break started successfully',
     });
   } catch (error) {
@@ -137,7 +142,7 @@ const endBreak = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: updatedAttendance,
+      data: attendance,
       message: 'Break ended successfully',
     });
   } catch (error) {

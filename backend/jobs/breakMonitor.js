@@ -29,8 +29,25 @@ const startBreakMonitorJob = () => {
       }).populate('userId', 'name email');
 
       for (const record of activeBreaks) {
-        const startTime = new Date(record.break.startTime);
-        const currentSessionMinutes = Math.floor((now - startTime) / 60000);
+        // Fallback: If legacy startTime is missing, get it from the breaks array
+        let startTime = record.break.startTime;
+        if (!startTime && record.breaks && record.breaks.length > 0) {
+          const ongoing = record.breaks.find(b => !b.breakEnd);
+          if (ongoing) {
+            startTime = ongoing.breakStart;
+            // Patch the record so we don't have to do this fallback every minute
+            record.break.startTime = startTime;
+            await record.save();
+          }
+        }
+
+        if (!startTime) {
+          console.warn(`[BreakMonitor] Record for ${record.userId?.name} is on break but missing startTime. Skipping.`);
+          continue;
+        }
+
+        const startTimeDate = new Date(startTime);
+        const currentSessionMinutes = Math.floor((now - startTimeDate) / 60000);
         const totalElapsedMinutes = (record.break.durationMinutes || 0) + currentSessionMinutes;
 
         if (totalElapsedMinutes > allowedMinutes) {
