@@ -208,6 +208,7 @@ const approveLeave = async (req, res, next) => {
 
     // 3. SYNC ATTENDANCE
     const Attendance = require('../models/Attendance');
+    const settings = await Settings.getSettings();
     const syncResults = [];
 
     for (const item of updatedLeave.dailyBreakdown) {
@@ -227,14 +228,17 @@ const approveLeave = async (req, res, next) => {
           lwp: (record.leaveMeta?.lwp || 0) + meta.lwp,
         };
         record.notes = notes;
+        record._settings = settings;
         await record.save();
       } else {
         record = await Attendance.create({
           userId: updatedLeave.userId._id,
           date,
           leaveMeta: meta,
-          notes
+          notes,
+          _settings: settings
         });
+
       }
       syncResults.push({ date, status: record.status });
     }
@@ -429,11 +433,14 @@ const cancelLeave = async (req, res, next) => {
         userId: leave.userId, 
         date: { $in: leave.dailyBreakdown.map(i => i.date) }
       });
+      
+      const settings = await Settings.getSettings();
 
       for (const record of records) {
         // Reset leaveMeta and notes
         record.leaveMeta = { cl: 0, sl: 0, rl: 0, lwp: 0 };
         record.notes = 'Leave Cancelled: Balance Restored';
+        record._settings = settings;
         await record.save(); // Triggers status recalculation
       }
     }
