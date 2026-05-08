@@ -57,6 +57,7 @@ const createHoliday = async (req, res, next) => {
     const AuditLog = require('../models/AuditLog');
     await AuditLog.create({
       action: 'HOLIDAY_CREATE',
+      module: 'holiday',
       performedBy: req.user._id,
       details: `Created holiday: ${title} on ${new Date(date).toLocaleDateString()}`
     });
@@ -123,6 +124,7 @@ const deleteHoliday = async (req, res, next) => {
     const AuditLog = require('../models/AuditLog');
     await AuditLog.create({
       action: 'HOLIDAY_DELETE',
+      module: 'holiday',
       performedBy: req.user._id,
       details: `Deleted holiday: ${holiday.title} (${new Date(holiday.date).toLocaleDateString()})`
     });

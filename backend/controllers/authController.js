@@ -57,6 +57,7 @@ const register = async (req, res, next) => {
     const AuditLog = require('../models/AuditLog');
     await AuditLog.create({
       action: 'EMPLOYEE_REGISTER',
+      module: 'employee',
       performedBy: req.user._id,
       details: `Registered new employee: ${user.name} (${user.employeeId})`
     });

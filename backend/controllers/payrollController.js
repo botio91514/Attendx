@@ -449,6 +449,7 @@ const bulkPay = async (req, res, next) => {
     // --- AUDIT LOG (ADDED) ---
     await AuditLog.create({
       action: 'PAYROLL_BULK_PAY',
+      module: 'payroll',
       performedBy: req.user._id,
       details: `Marked ${ids.length} payroll records as PAID for ${records[0]?.month}/${records[0]?.year}.`
     });
@@ -657,6 +658,7 @@ const unlockPayroll = async (req, res, next) => {
     // 🛡️ FINANCIAL AUDIT FIX: Maintain accountability for sensitive unlock actions
     await AuditLog.create({
       action: 'PAYROLL_UNLOCK',
+      module: 'payroll',
       performedBy: req.user._id,
       details: `Unlocked payroll records for ${month}/${year}. Draft system now active.`
     });
